@@ -93,12 +93,12 @@ jobs:
       - name: Add this repo module
         run: |
           xrobot_add_mod ${{ env.XR_MODULE_NAME }} && cat User/xrobot.yaml
-          xrobot_add_mod Motor
-          xrobot_add_mod CMD
+          xrobot_add_mod Motor && cat User/xrobot.yaml
+          xrobot_add_mod CMD && cat User/xrobot.yaml
 
       - name: Generate main again
         run: |
-          xrobot_setup
+          xrobot_setup && cat User/xrobot_main.hpp
 
       - name: Build
         run: |
