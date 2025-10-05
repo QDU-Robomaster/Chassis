@@ -19,7 +19,11 @@ constructor_args:
 template_args:
   - ChassisType: Helm<RMMotorContainer>
   - MotorType: RMMotorContainer
-required_hardware: []
+required_hardware:
+  - dr16
+  - motor
+  - can
+  - bmi088
 depends: []
 === END MANIFEST === */
 // clang-format on
