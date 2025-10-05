@@ -8,7 +8,7 @@ constructor_args:
   - motor_can1: '@motor_can1'
   - motor_can2: '@motor_can2'
   - task_stack_depth: 2048
-  - pid_param:
+  - pid_param_1:
       k: 1.0
       p: 0.0
       i: 0.0
@@ -24,22 +24,101 @@ depends: []
 === END MANIFEST === */
 // clang-format on
 
-#include "Motor.hpp"
-#include "app_framework.hpp"
-#include "pid.hpp"
 #include "CMD.hpp"
 #include "Helm.hpp"
 #include "Mecanum.hpp"
+#include "Motor.hpp"
 #include "Omni.hpp"
-
+#include "app_framework.hpp"
+#include "pid.hpp"
 
 template <typename ChassisType, typename MotorType>
 class Chassis : public LibXR::Application {
  public:
   Chassis(LibXR::HardwareContainer &hw, LibXR::ApplicationManager &app,
           CMD &cmd, Motor<MotorType> &motor_can1, Motor<MotorType> &motor_can2,
-          uint32_t task_stack_depth, LibXR::PID<float>::Param pid_param)
-      : chassis_(hw, app, cmd, motor_can1, motor_can2, task_stack_depth, pid_param) {
+          uint32_t task_stack_depth,
+          LibXR::PID<float>::Param pid_velocity_x_ = {.k = .0f,
+                                                  .p = .0f,
+                                                  .i = .0f,
+                                                  .d = .0f,
+                                                  .i_limit = .0f,
+                                                  .out_limit = .0f,
+                                                  .cycle = false},
+          LibXR::PID<float>::Param pid_velocity_y_ = {.k = .0f,
+                                                  .p = .0f,
+                                                  .i = .0f,
+                                                  .d = .0f,
+                                                  .i_limit = .0f,
+                                                  .out_limit = .0f,
+                                                  .cycle = false},
+          LibXR::PID<float>::Param pid_omega_ = {.k = .0f,
+                                                  .p = .0f,
+                                                  .i = .0f,
+                                                  .d = .0f,
+                                                  .i_limit = .0f,
+                                                  .out_limit = .0f,
+                                                  .cycle = false},
+          LibXR::PID<float>::Param pid_wheel_angle_0_ = {.k = .0f,
+                                                  .p = .0f,
+                                                  .i = .0f,
+                                                  .d = .0f,
+                                                  .i_limit = .0f,
+                                                  .out_limit = .0f,
+                                                  .cycle = false},
+          LibXR::PID<float>::Param pid_wheel_angle_1_ = {.k = .0f,
+                                                  .p = .0f,
+                                                  .i = .0f,
+                                                  .d = .0f,
+                                                  .i_limit = .0f,
+                                                  .out_limit = .0f,
+                                                  .cycle = false},
+          LibXR::PID<float>::Param pid_wheel_angle_2_ = {.k = .0f,
+                                                  .p = .0f,
+                                                  .i = .0f,
+                                                  .d = .0f,
+                                                  .i_limit = .0f,
+                                                  .out_limit = .0f,
+                                                  .cycle = false},
+          LibXR::PID<float>::Param pid_wheel_angle_3_ = {.k = .0f,
+                                                  .p = .0f,
+                                                  .i = .0f,
+                                                  .d = .0f,
+                                                  .i_limit = .0f,
+                                                  .out_limit = .0f,
+                                                  .cycle = false},
+          LibXR::PID<float>::Param pid_steer_angle_0_ = {.k = .0f,
+                                                  .p = .0f,
+                                                  .i = .0f,
+                                                  .d = .0f,
+                                                  .i_limit = .0f,
+                                                  .out_limit = .0f,
+                                                  .cycle = false},
+          LibXR::PID<float>::Param pid_steer_angle_1_ = {.k = .0f,
+                                                  .p = .0f,
+                                                  .i = .0f,
+                                                  .d = .0f,
+                                                  .i_limit = .0f,
+                                                  .out_limit = .0f,
+                                                  .cycle = false},
+          LibXR::PID<float>::Param pid_steer_angle_2_ = {.k = .0f,
+                                                   .p = .0f,
+                                                   .i = .0f,
+                                                   .d = .0f,
+                                                   .i_limit = .0f,
+                                                   .out_limit = .0f,
+                                                   .cycle = false},
+          LibXR::PID<float>::Param pid_steer_angle_3_ = {.k = .0f,
+                                                   .p = .0f,
+                                                  . i = .0f,
+                                                   .d = .0f,
+                                                   .i_limit = .0f,
+                                                   .out_limit = .0f,
+                                                   .cycle = false})
+      : chassis_(hw, app, cmd, motor_can1, motor_can2, task_stack_depth,
+                 pid_velocity_x_, pid_velocity_y_, pid_omega_,
+                 pid_wheel_angle_0_, pid_wheel_angle_1_, pid_wheel_angle_2_, pid_wheel_angle_3_,
+                 pid_steer_angle_0_, pid_steer_angle_1_, pid_steer_angle_2_, pid_steer_angle_3_) {
     // Hardware initialization example:
     // auto dev = hw.template Find<LibXR::GPIO>("led");
   }
