@@ -65,12 +65,12 @@ class Omni {
         cmd_suber.StartWaiting();
       }
 
-      omni->target_vx_ = omni->cmd_data_.x;
-      omni->target_vy_ = omni->cmd_data_.y;
-      omni->target_omega_ = omni->cmd_data_.z;
-
+      omni->semaphore_.Wait(UINT32_MAX);
+      omni->Update();
+      omni->UpdateSetpointFromCMD();
       omni->SelfResolution();
       omni->KinematicsInverseResolution();
+      omni->semaphore_.Post();
       omni->OutputToDynamics();
     }
   }
@@ -84,6 +84,17 @@ class Omni {
       motor_can1_->Update(i);
     }
   }
+
+  /**
+   * @brief 更新底盘控制指令状态
+   * @details 从CDM获取底盘控制指令
+   */
+  void UpdateSetpointFromCMD() {
+    target_vx_ = cmd_data_.x;
+    target_vy_ = cmd_data_.y;
+    target_omega_ = cmd_data_.z;
+  }
+
 
   /**
    * @brief 全向轮底盘正运动学解算
@@ -306,6 +317,7 @@ class Omni {
   LibXR::PID<float> pid_steer_angle_3_;
 
   LibXR::Thread thread_;
+  LibXR::Semaphore semaphore_;
 
   CMD::ChassisCMD cmd_data_;
 };

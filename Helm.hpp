@@ -20,6 +20,7 @@ depends: []
 #include "pid.hpp"
 #include "thread.hpp"
 #include "timebase.hpp"
+#include "semaphore.hpp"
 
 /**
  * @brief 舵轮底盘控制类
@@ -107,23 +108,38 @@ class Helm {
       helm->target_vy_ = helm->cmd_data_.y;
       helm->target_omega_ = helm->cmd_data_.z;
 
+      helm->semaphore_.Wait(UINT32_MAX);
+      helm->Update();
+      helm->UpdateSetpointFromCMD();
       helm->SelfResolution();
       helm->KinematicsInverseResolution();
+      helm->semaphore_.Post();
       helm->OutputToDynamics();
     }
   }
 
-  /**
-   * @brief 更新电机状态
-   * @details 更新所有轮向和舵向电机的反馈数据
-   */
-  void Update() {
+      /**
+       * @brief 更新电机状态
+       * @details 更新所有轮向和舵向电机的反馈数据
+       */
+      void
+      Update() {
     for (int i = 0; i < 4; i++) {
       motor_can1_->Update(i);
     }
     for (int i = 0; i < 4; i++) {
       motor_can2_->Update(i);
     }
+  }
+
+  /**
+   * @brief 更新底盘控制指令状态
+   * @details 从CDM获取底盘控制指令
+   */
+  void UpdateSetpointFromCMD() {
+    target_vx_ = cmd_data_.x;
+    target_vy_ = cmd_data_.y;
+    target_omega_ = cmd_data_.z;
   }
 
   /**
@@ -412,6 +428,8 @@ class Helm {
   LibXR::PID<float> pid_steer_angle_3_;
 
   LibXR::Thread thread_;
+  LibXR::Semaphore semaphore_;
 
   CMD::ChassisCMD cmd_data_;
+
 };

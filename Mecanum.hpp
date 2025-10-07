@@ -18,8 +18,10 @@ depends: []
 #include "libxr_time.hpp"
 #include "message.hpp"
 #include "pid.hpp"
+#include "semaphore.hpp"
 #include "thread.hpp"
 #include "timebase.hpp"
+
 
 template <typename MotorType>
 class Mecanum {
@@ -68,13 +70,12 @@ class Mecanum {
         mecanum->cmd_data_ = cmd_suber.GetData();
         cmd_suber.StartWaiting();
       }
-
-      mecanum->target_vx_ = mecanum->cmd_data_.x;
-      mecanum->target_vy_ = mecanum->cmd_data_.y;
-      mecanum->target_omega_ = mecanum->cmd_data_.z;
-
+      mecanum->semaphore_.Wait(UINT32_MAX);
+      mecanum->Update();
+      mecanum->UpdateSetpointFromCMD();
       mecanum->SelfResolution();
       mecanum->KinematicsInverseResolution();
+      mecanum->semaphore_.Post();
       mecanum->OutputToDynamics();
     }
   }
@@ -86,6 +87,16 @@ class Mecanum {
     for (int i = 0; i < 4; i++) {
       motor_can2_->Update(i);
     }
+  }
+
+  /**
+   * @brief 更新底盘控制指令状态
+   * @details 从CDM获取底盘控制指令
+   */
+  void UpdateSetpointFromCMD() {
+    target_vx_ = cmd_data_.x;
+    target_vy_ = cmd_data_.y;
+    target_omega_ = cmd_data_.z;
   }
 
   /**
@@ -248,8 +259,7 @@ class Mecanum {
 
       wheel_current += target_wheel_current_[i];
 
-      const float kMaxCurrent = 1.0f;
-      wheel_current = std::clamp(wheel_current, -kMaxCurrent, kMaxCurrent);
+      wheel_current = std::clamp(wheel_current, -max_current_, max_current_);
 
       motor_can1_->SetCurrent(i, wheel_current);
     }
@@ -296,6 +306,8 @@ class Mecanum {
   float target_vy_ = 0.0f;
   float target_omega_ = 0.0f;
 
+  const float max_current_ = 1.0f;
+
   LibXR::MicrosecondTimestamp::Duration dt_ = 0;
   LibXR::MicrosecondTimestamp last_online_time_ = 0;
 
@@ -317,6 +329,7 @@ class Mecanum {
   LibXR::PID<float> pid_steer_angle_3_;
 
   LibXR::Thread thread_;
+  LibXR::Semaphore semaphore_;
 
   CMD::ChassisCMD cmd_data_;
 };
