@@ -24,7 +24,11 @@ required_hardware:
   - motor
   - can
   - bmi088
-depends: []
+depends:
+  - qdu-future/CMD
+  - qdu-future/BMI088
+  - qdu-future/Motor
+  - xrobot-org/MadgwickAHRS
 === END MANIFEST === */
 // clang-format on
 
