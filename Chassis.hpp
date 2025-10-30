@@ -8,6 +8,11 @@ constructor_args:
   - motor_can1: '@motor_can1'
   - motor_can2: '@motor_can2'
   - task_stack_depth: 2048
+  - wheel_radius: 0.0f
+  - wheel_to_center: 0.0f
+  - gravity_height: 0.0f
+  - wheel_resistance: 0.0f
+  - error_compensation: 0.0f
   - pid_param_1:
       k: 1.0
       p: 0.0
@@ -16,11 +21,6 @@ constructor_args:
       i_limit: 0.0
       out_limit: 0.0
       cycle: false
-  - wheel_radius: 0.0f
-  - wheel_to_center: 0.0f
-  - gravity_height: 0.0f
-  - wheel_resistance: 0.0f
-  - error_compensation: 0.0f
 template_args:
   - ChassisType: Helm<RMMotorContainer>
   - MotorType: RMMotorContainer
