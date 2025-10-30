@@ -8,11 +8,11 @@ constructor_args:
   - motor_can1: '@motor_can1'
   - motor_can2: '@motor_can2'
   - task_stack_depth: 2048
-  - wheel_radius: 0.0f
-  - wheel_to_center: 0.0f
-  - gravity_height: 0.0f
-  - wheel_resistance: 0.0f
-  - error_compensation: 0.0f
+  - wheel_radius: 0.0
+  - wheel_to_center: 0.0
+  - gravity_height: 0.0
+  - wheel_resistance: 0.0
+  - error_compensation: 0.0
   - pid_param_1:
       k: 1.0
       p: 0.0
