@@ -15,13 +15,6 @@ depends: []
 #include "Chassis.hpp"
 #include "Motor.hpp"
 #include "app_framework.hpp"
-#include "libxr_time.hpp"
-#include "message.hpp"
-#include "pid.hpp"
-#include "semaphore.hpp"
-#include "thread.hpp"
-#include "timebase.hpp"
-
 
 template <typename MotorType>
 class Mecanum {
@@ -38,7 +31,9 @@ class Mecanum {
           LibXR::PID<float>::Param pid_steer_angle_0,
           LibXR::PID<float>::Param pid_steer_angle_1,
           LibXR::PID<float>::Param pid_steer_angle_2,
-          LibXR::PID<float>::Param pid_steer_angle_3)
+          LibXR::PID<float>::Param pid_steer_angle_3, float wheel_radius,
+          float wheel_to_center, float gravity_height, float wheel_resistance,
+          float error_compensation)
       : motor_can1_(&motor_can1),
         motor_can2_(&motor_can2),
         cmd_(&cmd),
@@ -52,7 +47,12 @@ class Mecanum {
         pid_steer_angle_0_(pid_steer_angle_0),
         pid_steer_angle_1_(pid_steer_angle_1),
         pid_steer_angle_2_(pid_steer_angle_2),
-        pid_steer_angle_3_(pid_steer_angle_3) {
+        pid_steer_angle_3_(pid_steer_angle_3),
+        wheel_radius_(wheel_radius),
+        wheel_to_center_(wheel_to_center),
+        gravity_height_(gravity_height),
+        wheel_resistance_(wheel_resistance),
+        error_compensation_(error_compensation) {
     thread_.Create(this, ThreadFunction, "MecanumChassisThread",
                    task_stack_depth, LibXR::Thread::Priority::MEDIUM);
   }
@@ -70,12 +70,12 @@ class Mecanum {
         mecanum->cmd_data_ = cmd_suber.GetData();
         cmd_suber.StartWaiting();
       }
-      mecanum->semaphore_.Wait(UINT32_MAX);
+      mecanum->mutex_.Lock();
       mecanum->Update();
       mecanum->UpdateSetpointFromCMD();
       mecanum->SelfResolution();
       mecanum->KinematicsInverseResolution();
-      mecanum->semaphore_.Post();
+      mecanum->mutex_.Unlock();
       mecanum->OutputToDynamics();
     }
   }
@@ -130,7 +130,7 @@ class Mecanum {
 
       now_vx_ += v_projected * cos_theta / 4.0f;
       now_vy_ += v_projected * sin_theta / 4.0f;
-      now_omega_ += (-v_projected / wheel_to_center_[i]) / 4.0f;
+      now_omega_ += (-v_projected / wheel_to_center_) / 4.0f;
     }
   }
 
@@ -151,7 +151,7 @@ class Mecanum {
     const float cos_roller_angle_ = 0.70710678118f;  // cos(45°) = √2/2
 
     for (int i = 0; i < 4; i++) {
-      float r = wheel_to_center_[i];
+      float r = wheel_to_center_;
       float theta = wheel_azimuth_[i];
       float cos_theta = std::cos(theta);
       float sin_theta = std::sin(theta);
@@ -200,11 +200,7 @@ class Mecanum {
     float force_y = pid_velocity_y_.Calculate(target_vy_, current_vy, dt_);
     float torque = pid_omega_.Calculate(target_omega_, current_omega, dt_);
 
-    float half_wheelbase = (wheel_to_center_[0] + wheel_to_center_[1] +
-                            wheel_to_center_[2] + wheel_to_center_[3]) /
-                           4.0f;
-
-    float torque_factor = torque / half_wheelbase;
+    float torque_factor = torque / wheel_to_center_;
 
     float wheel_force[4];
     wheel_force[0] =
@@ -220,16 +216,16 @@ class Mecanum {
       float current_wheel_omega = motor_can1_->GetSpeed(i);
 
       target_wheel_current_[i] =
-          wheel_force[i] + wheel_speed_limit_factor_ *
+          wheel_force[i] + error_compensation_ *
                                (target_wheel_omega_[i] - current_wheel_omega);
 
-      if (target_wheel_omega_[i] > wheel_resistance_omega_threshold_) {
+      if (target_wheel_omega_[i] > wheel_resistance_) {
         target_wheel_current_[i] += dynamic_wheel_current_[i];
-      } else if (target_wheel_omega_[i] < -wheel_resistance_omega_threshold_) {
+      } else if (target_wheel_omega_[i] < -wheel_resistance_) {
         target_wheel_current_[i] -= dynamic_wheel_current_[i];
       } else {
         target_wheel_current_[i] += current_wheel_omega /
-                                    wheel_resistance_omega_threshold_ *
+                                    wheel_resistance_ *
                                     dynamic_wheel_current_[i];
       }
     }
@@ -262,13 +258,19 @@ class Mecanum {
       wheel_current = std::clamp(wheel_current, -max_current_, max_current_);
 
       motor_can1_->SetCurrent(i, wheel_current);
+
+      while (target_vx_ == 0.0f && target_vy_ == 0.0f &&
+             target_omega_ == 0.0f) {
+        motor_can1_->SetCurrent(i, 0.0f);
+      }
+      
     }
   }
 
  private:
   const float wheel_radius_ = 0.0f;
 
-  const float wheel_to_center_[4] = {0.0f, 0.0f, 0.0f, 0.0f};
+  const float wheel_to_center_ = 0.0f;
 
   const float wheel_azimuth_[4] = {
       M_PI / 4.0f,
@@ -287,9 +289,10 @@ class Mecanum {
 
   float dynamic_wheel_current_[4] = {0.0f, 0.0f, 0.0f, 0.0f};
 
-  float wheel_resistance_omega_threshold_ = 0.0f;
+  /*若轮子出现明显阻力使用标定法获得此参数*/
+  float wheel_resistance_ = 0.0f;
 
-  float wheel_speed_limit_factor_ = 0.5f;
+  float error_compensation_ = 0.5f;
 
   float now_vx_ = 0.0f;
   float now_vy_ = 0.0f;
@@ -329,7 +332,7 @@ class Mecanum {
   LibXR::PID<float> pid_steer_angle_3_;
 
   LibXR::Thread thread_;
-  LibXR::Semaphore semaphore_;
+  LibXR::Mutex mutex_;
 
   CMD::ChassisCMD cmd_data_;
 };

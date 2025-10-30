@@ -13,9 +13,6 @@ depends: []
 #include "Chassis.hpp"
 #include "RMMotorContainer.hpp"
 #include "app_framework.hpp"
-#include "message.hpp"
-#include "pid.hpp"
-#include "thread.hpp"
 
 template <typename MotorType>
 class Omni {
@@ -32,7 +29,12 @@ class Omni {
        LibXR::PID<float>::Param pid_steer_angle_0,
        LibXR::PID<float>::Param pid_steer_angle_1,
        LibXR::PID<float>::Param pid_steer_angle_2,
-       LibXR::PID<float>::Param pid_steer_angle_3)
+       LibXR::PID<float>::Param pid_steer_angle_3,
+       float wheel_radius,
+       float wheel_to_center,
+       float gravity_height,
+       float wheel_resistance,
+       float error_compensation)
       : motor_can1_(&motor_can1),
         motor_can2_(&motor_can2),
         cmd_(&cmd),
@@ -46,7 +48,12 @@ class Omni {
         pid_steer_angle_0_(pid_steer_angle_0),
         pid_steer_angle_1_(pid_steer_angle_1),
         pid_steer_angle_2_(pid_steer_angle_2),
-        pid_steer_angle_3_(pid_steer_angle_3) {
+        pid_steer_angle_3_(pid_steer_angle_3),
+        wheel_radius_(wheel_radius),
+        wheel_to_center_(wheel_to_center),
+        gravity_height_(gravity_height),
+        wheel_resistance_(wheel_resistance),
+        error_compensation_(error_compensation) {
     thread_.Create(this, ThreadFunction, "OmniChassisThread", task_stack_depth,
                    LibXR::Thread::Priority::MEDIUM);
   }
@@ -65,12 +72,12 @@ class Omni {
         cmd_suber.StartWaiting();
       }
 
-      omni->semaphore_.Wait(UINT32_MAX);
+      omni->mutex_.Lock();
       omni->Update();
       omni->UpdateSetpointFromCMD();
       omni->SelfResolution();
       omni->KinematicsInverseResolution();
-      omni->semaphore_.Post();
+      omni->mutex_.Unlock();
       omni->OutputToDynamics();
     }
   }
@@ -94,7 +101,6 @@ class Omni {
     target_vy_ = cmd_data_.y;
     target_omega_ = cmd_data_.z;
   }
-
 
   /**
    * @brief 全向轮底盘正运动学解算
@@ -196,26 +202,29 @@ class Omni {
     float torque_factor = torque / wheel_to_center_;
 
     float wheel_force[4];
-    wheel_force[0] = (-sqrt2 * force_x + sqrt2 * force_y + torque_factor) / 4.0f * wheel_radius_;
-    wheel_force[1] = (-sqrt2 * force_x - sqrt2 * force_y + torque_factor) / 4.0f * wheel_radius_;
-    wheel_force[2] = (sqrt2 * force_x - sqrt2 * force_y + torque_factor) / 4.0f * wheel_radius_;
-    wheel_force[3] = (sqrt2 * force_x + sqrt2 * force_y + torque_factor) / 4.0f * wheel_radius_;
+    wheel_force[0] = (-sqrt2 * force_x + sqrt2 * force_y + torque_factor) /
+                     4.0f * wheel_radius_;
+    wheel_force[1] = (-sqrt2 * force_x - sqrt2 * force_y + torque_factor) /
+                     4.0f * wheel_radius_;
+    wheel_force[2] = (sqrt2 * force_x - sqrt2 * force_y + torque_factor) /
+                     4.0f * wheel_radius_;
+    wheel_force[3] = (sqrt2 * force_x + sqrt2 * force_y + torque_factor) /
+                     4.0f * wheel_radius_;
 
     for (int i = 0; i < 4; i++) {
       float current_wheel_omega = motor_can1_->GetSpeed(i);
 
       target_wheel_current_[i] =
-          wheel_force[i] + wheel_speed_limit_factor_ *
-                               (target_wheel_omega_[i] - current_wheel_omega);
+          wheel_force[i] +
+          error_compensation_ * (target_wheel_omega_[i] - current_wheel_omega);
 
-      if (target_wheel_omega_[i] > wheel_resistance_omega_threshold_) {
+      if (target_wheel_omega_[i] > wheel_resistance_) {
         target_wheel_current_[i] += dynamic_wheel_current_[i];
-      } else if (target_wheel_omega_[i] < -wheel_resistance_omega_threshold_) {
+      } else if (target_wheel_omega_[i] < -wheel_resistance_) {
         target_wheel_current_[i] -= dynamic_wheel_current_[i];
       } else {
-        target_wheel_current_[i] += current_wheel_omega /
-                                    wheel_resistance_omega_threshold_ *
-                                    dynamic_wheel_current_[i];
+        target_wheel_current_[i] +=
+            current_wheel_omega / wheel_resistance_ * dynamic_wheel_current_[i];
       }
     }
 
@@ -248,6 +257,11 @@ class Omni {
       wheel_current = std::clamp(wheel_current, -kMaxCurrent, kMaxCurrent);
 
       motor_can1_->SetCurrent(i, wheel_current);
+
+      while (target_vx_ == 0.0f && target_vy_ == 0.0f &&
+             target_omega_ == 0.0f) {
+        motor_can1_->SetCurrent(i, 0.0f);
+      }
     }
   }
 
@@ -275,9 +289,10 @@ class Omni {
 
   float target_steer_angle_[4] = {0.0f, 0.0f, 0.0f, 0.0f};
 
-  float wheel_resistance_omega_threshold_ = 0.0f;
+  /*若轮子出现明显阻力使用标定法获得此参数*/
+  float wheel_resistance_ = 0.0f;
 
-  float wheel_speed_limit_factor_ = 0.5f;
+  float error_compensation_ = 0.5f;
 
   float now_vx_ = 0.0f;
   float now_vy_ = 0.0f;
@@ -317,7 +332,7 @@ class Omni {
   LibXR::PID<float> pid_steer_angle_3_;
 
   LibXR::Thread thread_;
-  LibXR::Semaphore semaphore_;
+  LibXR::Mutex mutex_;
 
   CMD::ChassisCMD cmd_data_;
 };
