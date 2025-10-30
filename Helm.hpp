@@ -45,7 +45,9 @@ class Helm {
    */
   Helm(LibXR::HardwareContainer &hw, LibXR::ApplicationManager &app, CMD &cmd,
        Motor<MotorType> &motor_can1, Motor<MotorType> &motor_can2,
-       uint32_t task_stack_depth, LibXR::PID<float>::Param pid_velocity_x,
+       uint32_t task_stack_depth, float wheel_radius, float wheel_to_center,
+       float gravity_height, float wheel_resistance, float error_compensation,
+       LibXR::PID<float>::Param pid_velocity_x,
        LibXR::PID<float>::Param pid_velocity_y,
        LibXR::PID<float>::Param pid_omega,
        LibXR::PID<float>::Param pid_wheel_angle_0,
@@ -55,10 +57,13 @@ class Helm {
        LibXR::PID<float>::Param pid_steer_angle_0,
        LibXR::PID<float>::Param pid_steer_angle_1,
        LibXR::PID<float>::Param pid_steer_angle_2,
-       LibXR::PID<float>::Param pid_steer_angle_3, float wheel_radius,
-       float wheel_to_center, float gravity_height, float wheel_resistance,
-       float error_compensation)
-      : motor_can1_(&motor_can1),
+       LibXR::PID<float>::Param pid_steer_angle_3)
+      : wheel_radius_(wheel_radius),
+        wheel_to_center_(wheel_to_center),
+        gravity_height_(gravity_height),
+        wheel_resistance_(wheel_resistance),
+        error_compensation_(error_compensation),
+        motor_can1_(&motor_can1),
         motor_can2_(&motor_can2),
         cmd_(&cmd),
         pid_velocity_x_(pid_velocity_x),
@@ -71,12 +76,7 @@ class Helm {
         pid_steer_angle_0_(pid_steer_angle_0),
         pid_steer_angle_1_(pid_steer_angle_1),
         pid_steer_angle_2_(pid_steer_angle_2),
-        pid_steer_angle_3_(pid_steer_angle_3),
-        wheel_radius_(wheel_radius),
-        wheel_to_center_(wheel_to_center),
-        gravity_height_(gravity_height),
-        wheel_resistance_(wheel_resistance),
-        error_compensation_(error_compensation) {
+        pid_steer_angle_3_(pid_steer_angle_3) {
     thread_.Create(this, ThreadFunction, "HelmChassisThread", task_stack_depth,
                    LibXR::Thread::Priority::MEDIUM);
   }
@@ -119,12 +119,11 @@ class Helm {
     }
   }
 
-      /**
-       * @brief 更新电机状态
-       * @details 更新所有轮向和舵向电机的反馈数据
-       */
-      void
-      Update() {
+  /**
+   * @brief 更新电机状态
+   * @details 更新所有轮向和舵向电机的反馈数据
+   */
+  void Update() {
     for (int i = 0; i < 4; i++) {
       motor_can1_->Update(i);
     }
@@ -293,17 +292,15 @@ class Helm {
 
       target_wheel_current_[i] =
           tmp_force[i] * wheel_radius_ +
-          error_compensation_ *
-              (target_wheel_omega_[i] - current_wheel_omega);
+          error_compensation_ * (target_wheel_omega_[i] - current_wheel_omega);
 
       if (target_wheel_omega_[i] > wheel_resistance_) {
         target_wheel_current_[i] += dynamic_wheel_current_[i];
       } else if (target_wheel_omega_[i] < -wheel_resistance_) {
         target_wheel_current_[i] -= dynamic_wheel_current_[i];
       } else {
-        target_wheel_current_[i] += current_wheel_omega /
-                                    wheel_resistance_ *
-                                    dynamic_wheel_current_[i];
+        target_wheel_current_[i] +=
+            current_wheel_omega / wheel_resistance_ * dynamic_wheel_current_[i];
       }
     }
 
@@ -439,5 +436,4 @@ class Helm {
   LibXR::Mutex mutex_;
 
   CMD::ChassisCMD cmd_data_;
-
 };

@@ -16,11 +16,11 @@ constructor_args:
       i_limit: 0.0
       out_limit: 0.0
       cycle: false
-  - wheel_radius = 0.0f
-  - wheel_to_center = 0.0f
-  - gravity_height = 0.0f
-  - wheel_resistance = 0.0f
-  - error_compensation = 0.0f
+  - wheel_radius: 0.0f
+  - wheel_to_center: 0.0f
+  - gravity_height: 0.0f
+  - wheel_resistance: 0.0f
+  - error_compensation: 0.0f
 template_args:
   - ChassisType: Helm<RMMotorContainer>
   - MotorType: RMMotorContainer
@@ -50,7 +50,9 @@ class Chassis : public LibXR::Application {
  public:
   Chassis(LibXR::HardwareContainer &hw, LibXR::ApplicationManager &app,
           CMD &cmd, Motor<MotorType> &motor_can1, Motor<MotorType> &motor_can2,
-          uint32_t task_stack_depth,
+          uint32_t task_stack_depth, float wheel_radius = 0.0f,
+          float wheel_to_center = 0.0f, float gravity_height = 0.0f,
+          float wheel_resistance = 0.0f, float error_compensation = 0.0f,
           LibXR::PID<float>::Param pid_velocity_x_ = {.k = .0f,
                                                       .p = .0f,
                                                       .i = .0f,
@@ -127,15 +129,14 @@ class Chassis : public LibXR::Application {
                                                          .d = .0f,
                                                          .i_limit = .0f,
                                                          .out_limit = .0f,
-                                                         .cycle = false},
-          float wheel_radius = 0.0f, float wheel_to_center = 0.0f, float gravity_height = 0.0f,
-          float wheel_resistance = 0.0f, float error_compensation = 0.0f)
+                                                         .cycle = false})
       : chassis_(hw, app, cmd, motor_can1, motor_can2, task_stack_depth,
-                 pid_velocity_x_, pid_velocity_y_, pid_omega_,
-                 pid_wheel_angle_0_, pid_wheel_angle_1_, pid_wheel_angle_2_,
-                 pid_wheel_angle_3_, pid_steer_angle_0_, pid_steer_angle_1_,
-                 pid_steer_angle_2_, pid_steer_angle_3_, wheel_radius, wheel_to_center,
-                 gravity_height, wheel_resistance, error_compensation) {
+                 wheel_radius, wheel_to_center, gravity_height,
+                 wheel_resistance, error_compensation, pid_velocity_x_,
+                 pid_velocity_y_, pid_omega_, pid_wheel_angle_0_,
+                 pid_wheel_angle_1_, pid_wheel_angle_2_, pid_wheel_angle_3_,
+                 pid_steer_angle_0_, pid_steer_angle_1_, pid_steer_angle_2_,
+                 pid_steer_angle_3_) {
     // Hardware initialization example:
     // auto dev = hw.template Find<LibXR::GPIO>("led");
   }

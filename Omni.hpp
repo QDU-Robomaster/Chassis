@@ -19,7 +19,9 @@ class Omni {
  public:
   Omni(LibXR::HardwareContainer &hw, LibXR::ApplicationManager &app, CMD &cmd,
        Motor<MotorType> &motor_can1, Motor<MotorType> &motor_can2,
-       uint32_t task_stack_depth, LibXR::PID<float>::Param pid_velocity_x,
+       uint32_t task_stack_depth, float wheel_radius, float wheel_to_center,
+       float gravity_height, float wheel_resistance, float error_compensation,
+       LibXR::PID<float>::Param pid_velocity_x,
        LibXR::PID<float>::Param pid_velocity_y,
        LibXR::PID<float>::Param pid_omega,
        LibXR::PID<float>::Param pid_wheel_angle_0,
@@ -29,13 +31,13 @@ class Omni {
        LibXR::PID<float>::Param pid_steer_angle_0,
        LibXR::PID<float>::Param pid_steer_angle_1,
        LibXR::PID<float>::Param pid_steer_angle_2,
-       LibXR::PID<float>::Param pid_steer_angle_3,
-       float wheel_radius,
-       float wheel_to_center,
-       float gravity_height,
-       float wheel_resistance,
-       float error_compensation)
-      : motor_can1_(&motor_can1),
+       LibXR::PID<float>::Param pid_steer_angle_3)
+      : wheel_radius_(wheel_radius),
+        wheel_to_center_(wheel_to_center),
+        gravity_height_(gravity_height),
+        wheel_resistance_(wheel_resistance),
+        error_compensation_(error_compensation),
+        motor_can1_(&motor_can1),
         motor_can2_(&motor_can2),
         cmd_(&cmd),
         pid_velocity_x_(pid_velocity_x),
@@ -48,12 +50,7 @@ class Omni {
         pid_steer_angle_0_(pid_steer_angle_0),
         pid_steer_angle_1_(pid_steer_angle_1),
         pid_steer_angle_2_(pid_steer_angle_2),
-        pid_steer_angle_3_(pid_steer_angle_3),
-        wheel_radius_(wheel_radius),
-        wheel_to_center_(wheel_to_center),
-        gravity_height_(gravity_height),
-        wheel_resistance_(wheel_resistance),
-        error_compensation_(error_compensation) {
+        pid_steer_angle_3_(pid_steer_angle_3) {
     thread_.Create(this, ThreadFunction, "OmniChassisThread", task_stack_depth,
                    LibXR::Thread::Priority::MEDIUM);
   }
