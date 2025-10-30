@@ -15,6 +15,7 @@ depends: []
 #include "Chassis.hpp"
 #include "Motor.hpp"
 #include "app_framework.hpp"
+#include "pid.hpp"
 
 /**
  * @brief 舵轮底盘控制类

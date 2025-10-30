@@ -13,6 +13,7 @@ depends: []
 #include "Chassis.hpp"
 #include "RMMotorContainer.hpp"
 #include "app_framework.hpp"
+#include "pid.hpp"
 
 template <typename MotorType>
 class Omni {
