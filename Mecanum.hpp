@@ -15,6 +15,7 @@ depends: []
 #include "Chassis.hpp"
 #include "Motor.hpp"
 #include "app_framework.hpp"
+#include "libxr_time.hpp"
 #include "pid.hpp"
 
 template <typename MotorType>
@@ -61,10 +62,6 @@ class Mecanum {
   static void ThreadFunction(Mecanum *mecanum) {
     LibXR::Topic::ASyncSubscriber<CMD::ChassisCMD> cmd_suber("chassis_cmd");
 
-    auto now_ = LibXR::Timebase::GetMicroseconds();
-    mecanum->dt_ = (now_ - mecanum->last_online_time_);
-    mecanum->last_online_time_ = now_;
-
     cmd_suber.StartWaiting();
     while (true) {
       if (cmd_suber.Available()) {
@@ -78,15 +75,17 @@ class Mecanum {
       mecanum->KinematicsInverseResolution();
       mecanum->mutex_.Unlock();
       mecanum->OutputToDynamics();
+      mecanum->thread_.SleepUntil(mecanum->last_online_time_, 2.0f);
     }
   }
 
   void Update() {
+    auto now = LibXR::Timebase::GetMilliseconds();
+    this->dt_ = (now - this->last_online_time_).ToSecondf();
+    this->last_online_time_ = now;
+
     for (int i = 0; i < 4; i++) {
       motor_can1_->Update(i);
-    }
-    for (int i = 0; i < 4; i++) {
-      motor_can2_->Update(i);
     }
   }
 
@@ -193,6 +192,7 @@ class Mecanum {
    *            - 限制最大电流，输出到电机
    */
   void OutputToDynamics() {
+
     float current_vx = now_vx_;
     float current_vy = now_vy_;
     float current_omega = now_omega_;
@@ -312,8 +312,8 @@ class Mecanum {
 
   const float max_current_ = 1.0f;
 
-  LibXR::MicrosecondTimestamp::Duration dt_ = 0;
-  LibXR::MicrosecondTimestamp last_online_time_ = 0;
+  float dt_ = 0;
+  LibXR::MillisecondTimestamp last_online_time_ = 0;
 
   Motor<MotorType> *motor_can1_;
   Motor<MotorType> *motor_can2_;

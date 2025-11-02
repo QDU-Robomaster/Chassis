@@ -13,6 +13,7 @@ depends: []
 #include "Chassis.hpp"
 #include "RMMotorContainer.hpp"
 #include "app_framework.hpp"
+#include "libxr_time.hpp"
 #include "pid.hpp"
 
 template <typename MotorType>
@@ -59,10 +60,6 @@ class Omni {
   static void ThreadFunction(Omni *omni) {
     LibXR::Topic::ASyncSubscriber<CMD::ChassisCMD> cmd_suber("chassis_cmd");
 
-    auto now_ = LibXR::Timebase::GetMicroseconds();
-    omni->dt_ = (now_ - omni->last_online_time_);
-    omni->last_online_time_ = now_;
-
     cmd_suber.StartWaiting();
     while (true) {
       if (cmd_suber.Available()) {
@@ -77,6 +74,8 @@ class Omni {
       omni->KinematicsInverseResolution();
       omni->mutex_.Unlock();
       omni->OutputToDynamics();
+
+      omni->thread_.SleepUntil(omni->last_online_time_, 2.0f);
     }
   }
 
@@ -85,6 +84,9 @@ class Omni {
    * @details 更新所有轮向电机的反馈数据
    */
   void Update() {
+    auto now_ = LibXR::Timebase::GetMilliseconds();
+    this->dt_ = (now_ - this->last_online_time_).ToSecondf();
+    this->last_online_time_ = now_;
     for (int i = 0; i < 4; i++) {
       motor_can1_->Update(i);
     }
@@ -309,8 +311,8 @@ class Omni {
 
   float target_omega_ = 0.0f;
 
-  LibXR::MicrosecondTimestamp::Duration dt_ = 0;
-  LibXR::MicrosecondTimestamp last_online_time_ = 0;
+  float dt_ = 0;
+  LibXR::MillisecondTimestamp last_online_time_ = 0;
 
   Motor<MotorType> *motor_can1_;
   Motor<MotorType> *motor_can2_;

@@ -15,6 +15,7 @@ depends: []
 #include "Chassis.hpp"
 #include "Motor.hpp"
 #include "app_framework.hpp"
+#include "libxr_time.hpp"
 #include "pid.hpp"
 
 /**
@@ -95,10 +96,6 @@ class Helm {
   static void ThreadFunction(Helm *helm) {
     LibXR::Topic::ASyncSubscriber<CMD::ChassisCMD> cmd_suber("chassis_cmd");
 
-    auto now_ = LibXR::Timebase::GetMicroseconds();
-    helm->dt_ = (now_ - helm->last_online_time_);
-    helm->last_online_time_ = now_;
-
     cmd_suber.StartWaiting();
     while (true) {
       if (cmd_suber.Available()) {
@@ -117,6 +114,8 @@ class Helm {
       helm->KinematicsInverseResolution();
       helm->mutex_.Unlock();
       helm->OutputToDynamics();
+
+      helm->thread_.SleepUntil(helm->last_online_time_, 2.0f)
     }
   }
 
@@ -125,6 +124,10 @@ class Helm {
    * @details 更新所有轮向和舵向电机的反馈数据
    */
   void Update() {
+    auto now_ = LibXR::Timebase::GetMilliseconds();
+    this->dt_ = (now_ - this->last_online_time_).ToSecondf();
+    this->last_online_time_ = now_;
+
     for (int i = 0; i < 4; i++) {
       motor_can1_->Update(i);
     }
@@ -413,8 +416,8 @@ class Helm {
 
   float target_omega_ = 0.0f;
 
-  LibXR::MicrosecondTimestamp::Duration dt_ = 0;
-  LibXR::MicrosecondTimestamp last_online_time_ = 0;
+  float  dt_ = 0;
+  LibXR::MillisecondTimestamp last_online_time_ = 0;
 
   Motor<MotorType> *motor_can1_;
   Motor<MotorType> *motor_can2_;
