@@ -115,7 +115,7 @@ class Helm {
       helm->mutex_.Unlock();
       helm->OutputToDynamics();
 
-      helm->thread_.SleepUntil(helm->last_online_time_, 2.0f)
+      helm->thread_.SleepUntil(helm->last_online_time_, 2.0f);
     }
   }
 
