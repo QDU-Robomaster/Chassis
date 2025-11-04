@@ -215,7 +215,7 @@ class Helm {
    */
   void SteerMotorKinematicsNearestTransposition() {
     for (int i = 0; i < 4; i++) {
-      float tmp_delta_angle = Math_Modulus_Normalization(
+      float tmp_delta_angle = MathModulusNormalization(
           target_steer_angle_[i] - motor_can2_->GetAngle(i), 2.0f * M_PI);
 
       if (-M_PI / 2.0f <= tmp_delta_angle && tmp_delta_angle <= M_PI / 2.0f) {
