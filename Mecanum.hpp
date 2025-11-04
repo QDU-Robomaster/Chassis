@@ -28,10 +28,10 @@ class Mecanum {
           float error_compensation, LibXR::PID<float>::Param pid_velocity_x,
           LibXR::PID<float>::Param pid_velocity_y,
           LibXR::PID<float>::Param pid_omega,
-          LibXR::PID<float>::Param pid_wheel_angle_0,
-          LibXR::PID<float>::Param pid_wheel_angle_1,
-          LibXR::PID<float>::Param pid_wheel_angle_2,
-          LibXR::PID<float>::Param pid_wheel_angle_3,
+          LibXR::PID<float>::Param pid_wheel_omega_0,
+          LibXR::PID<float>::Param pid_wheel_omega_1,
+          LibXR::PID<float>::Param pid_wheel_omega_2,
+          LibXR::PID<float>::Param pid_wheel_omega_3,
           LibXR::PID<float>::Param pid_steer_angle_0,
           LibXR::PID<float>::Param pid_steer_angle_1,
           LibXR::PID<float>::Param pid_steer_angle_2,
@@ -47,14 +47,13 @@ class Mecanum {
         pid_velocity_x_(pid_velocity_x),
         pid_velocity_y_(pid_velocity_y),
         pid_omega_(pid_omega),
-        pid_wheel_angle_0_(pid_wheel_angle_0),
-        pid_wheel_angle_1_(pid_wheel_angle_1),
-        pid_wheel_angle_2_(pid_wheel_angle_2),
-        pid_wheel_angle_3_(pid_wheel_angle_3),
-        pid_steer_angle_0_(pid_steer_angle_0),
-        pid_steer_angle_1_(pid_steer_angle_1),
-        pid_steer_angle_2_(pid_steer_angle_2),
-        pid_steer_angle_3_(pid_steer_angle_3) {
+        pid_wheel_omega_{pid_wheel_omega_0, pid_wheel_omega_1,
+                         pid_wheel_omega_2, pid_wheel_omega_3},
+        pid_steer_angle_{pid_steer_angle_0, pid_steer_angle_1,
+                         pid_steer_angle_2, pid_steer_angle_3} {
+    UNUSED(hw);
+    UNUSED(app);
+
     thread_.Create(this, ThreadFunction, "MecanumChassisThread",
                    task_stack_depth, LibXR::Thread::Priority::MEDIUM);
   }
@@ -75,6 +74,7 @@ class Mecanum {
       mecanum->KinematicsInverseResolution();
       mecanum->mutex_.Unlock();
       mecanum->OutputToDynamics();
+
       mecanum->thread_.SleepUntil(mecanum->last_online_time_, 2.0f);
     }
   }
@@ -116,7 +116,7 @@ class Mecanum {
    *          通过四个轮子的速度建立超定方程组求解 vx, vy, ω
    */
   void SelfResolution() {
-    const float cos_roller_angle_ = 0.70710678118f;  // cos(45°) = √2/2
+    const float COS_ROLLER_ANGLE = 0.70710678118f;  // cos(45°) = √2/2
 
     now_vx_ = 0.0f;
     now_vy_ = 0.0f;
@@ -124,7 +124,7 @@ class Mecanum {
 
     for (int i = 0; i < 4; i++) {
       float v_projected =
-          motor_can1_->GetSpeed(i) * wheel_radius_ * cos_roller_angle_;
+          motor_can1_->GetSpeed(i) * wheel_radius_ * COS_ROLLER_ANGLE;
       float cos_theta = std::cos(wheel_azimuth_[i]);
       float sin_theta = std::sin(wheel_azimuth_[i]);
 
@@ -148,7 +148,7 @@ class Mecanum {
    *          - cos(45°) = √2/2 ≈ 0.707
    */
   void KinematicsInverseResolution() {
-    const float cos_roller_angle_ = 0.70710678118f;  // cos(45°) = √2/2
+    const float COS_ROLLER_ANGLE = 0.70710678118f;  // cos(45°) = √2/2
 
     for (int i = 0; i < 4; i++) {
       float r = wheel_to_center_;
@@ -161,7 +161,7 @@ class Mecanum {
 
       float wheel_velocity = ((target_vx_ - target_omega_ * ry) * cos_theta +
                               (target_vy_ + target_omega_ * rx) * sin_theta) /
-                             cos_roller_angle_;
+                             COS_ROLLER_ANGLE;
 
       target_wheel_omega_[i] = wheel_velocity / wheel_radius_;
     }
@@ -234,25 +234,8 @@ class Mecanum {
     for (int i = 0; i < 4; i++) {
       float current_wheel_omega = motor_can1_->GetSpeed(i);
 
-      float wheel_current = 0.0f;
-      switch (i) {
-        case 0:
-          wheel_current = pid_wheel_angle_0_.Calculate(
-              target_wheel_omega_[i], current_wheel_omega, dt_);
-          break;
-        case 1:
-          wheel_current = pid_wheel_angle_1_.Calculate(
-              target_wheel_omega_[i], current_wheel_omega, dt_);
-          break;
-        case 2:
-          wheel_current = pid_wheel_angle_2_.Calculate(
-              target_wheel_omega_[i], current_wheel_omega, dt_);
-          break;
-        case 3:
-          wheel_current = pid_wheel_angle_3_.Calculate(
-              target_wheel_omega_[i], current_wheel_omega, dt_);
-          break;
-      }
+      float wheel_current = pid_wheel_omega_[i].Calculate(
+          target_wheel_omega_[i], current_wheel_omega, dt_);
 
       wheel_current += target_wheel_current_[i];
 
@@ -269,18 +252,18 @@ class Mecanum {
   }
 
  private:
-  const float wheel_radius_ = 0.0f;
+   float wheel_radius_ = 0.0f;
 
-  const float wheel_to_center_ = 0.0f;
+   float wheel_to_center_ = 0.0f;
 
-  const float wheel_azimuth_[4] = {
+   float wheel_azimuth_[4] = {
       M_PI / 4.0f,
       3.0f * M_PI / 4.0f,
       5.0f * M_PI / 4.0f,
       7.0f * M_PI / 4.0f,
   };
 
-  const float gravity_height_ = 0.0f;
+   float gravity_height_ = 0.0f;
 
   float target_wheel_omega_[4] = {0.0f, 0.0f, 0.0f, 0.0f};
 
@@ -310,7 +293,7 @@ class Mecanum {
   float target_vy_ = 0.0f;
   float target_omega_ = 0.0f;
 
-  const float max_current_ = 1.0f;
+  float max_current_ = 1.0f;
 
   float dt_ = 0;
   LibXR::MillisecondTimestamp last_online_time_ = 0;
@@ -323,14 +306,8 @@ class Mecanum {
   LibXR::PID<float> pid_velocity_y_;
   LibXR::PID<float> pid_omega_;
 
-  LibXR::PID<float> pid_wheel_angle_0_;
-  LibXR::PID<float> pid_wheel_angle_1_;
-  LibXR::PID<float> pid_wheel_angle_2_;
-  LibXR::PID<float> pid_wheel_angle_3_;
-  LibXR::PID<float> pid_steer_angle_0_;
-  LibXR::PID<float> pid_steer_angle_1_;
-  LibXR::PID<float> pid_steer_angle_2_;
-  LibXR::PID<float> pid_steer_angle_3_;
+  LibXR::PID<float> pid_wheel_omega_[4]{0.0f, 0.0f, 0.0f, 0.0f};
+  LibXR::PID<float> pid_steer_angle_[4]{0.0f, 0.0f, 0.0f, 0.0f};
 
   LibXR::Thread thread_;
   LibXR::Mutex mutex_;

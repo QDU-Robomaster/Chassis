@@ -37,6 +37,7 @@ depends:
 === END MANIFEST === */
 // clang-format on
 
+#include <cstdint>
 #include "CMD.hpp"
 #include "Helm.hpp"
 #include "Mecanum.hpp"
@@ -44,6 +45,13 @@ depends:
 #include "Omni.hpp"
 #include "app_framework.hpp"
 #include "pid.hpp"
+
+enum class ChassisEvent:uint8_t {
+  SET_MODE_RELAX,
+  SET_MODE_FOLLOW,
+  SET_MODE_ROTOR,
+  SET_MODE_INDENPENDENT,
+};
 
 template <typename ChassisType, typename MotorType>
 class Chassis : public LibXR::Application {
@@ -137,12 +145,47 @@ class Chassis : public LibXR::Application {
                  pid_wheel_angle_1_, pid_wheel_angle_2_, pid_wheel_angle_3_,
                  pid_steer_angle_0_, pid_steer_angle_1_, pid_steer_angle_2_,
                  pid_steer_angle_3_) {
-    // Hardware initialization example:
-    // auto dev = hw.template Find<LibXR::GPIO>("led");
+    auto cb = [](bool in_isr, void *arg,
+                                     uint32_t event_id) {
+      UNUSED(in_isr);
+      static_cast<Chassis *>(arg)->EventHandler(event_id);
+    };
+
+    using GenericCallbackPtr = void (*)(bool, void *, uint32_t);
+    using TargetCallbackPtr = void (*)(bool, Chassis *, uint32_t);
+
+    GenericCallbackPtr generic_ptr = cb;
+
+    auto specific_ptr = reinterpret_cast<TargetCallbackPtr>(generic_ptr);
+
+    auto callback = LibXR::Callback<uint32_t>::Create(specific_ptr, this);
+    chassis_event_.Register(static_cast<uint32_t>(ChassisEvent::SET_MODE_RELAX),
+                            callback);
+    chassis_event_.Register(
+        static_cast<uint32_t>(ChassisEvent::SET_MODE_FOLLOW), callback);
+    chassis_event_.Register(static_cast<uint32_t>(ChassisEvent::SET_MODE_ROTOR),
+                            callback);
+    chassis_event_.Register(
+        static_cast<uint32_t>(ChassisEvent::SET_MODE_INDENPENDENT), callback);
+  }
+
+  /**
+   * @brief 获取底盘的事件处理器
+   * @return LibXR::Event& 事件处理器的引用
+   */
+  LibXR::Event &GetEvent() { return chassis_event_; }
+
+  /**
+   * @brief 事件处理器，根据传入的事件ID执行相应操作
+   * @param event_id 触发的事件ID
+   */
+  void EventHandler(uint32_t event_id) {
+    chassis_.SetMode(static_cast<uint32_t>(static_cast<ChassisEvent>(event_id)));
   }
 
   void OnMonitor() override {}
 
  private:
   ChassisType chassis_;
+  LibXR::Event chassis_event_;
 };

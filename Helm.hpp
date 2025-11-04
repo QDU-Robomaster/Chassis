@@ -15,6 +15,7 @@ depends: []
 #include "Chassis.hpp"
 #include "Motor.hpp"
 #include "app_framework.hpp"
+#include "libxr_def.hpp"
 #include "libxr_time.hpp"
 #include "pid.hpp"
 
@@ -52,10 +53,10 @@ class Helm {
        LibXR::PID<float>::Param pid_velocity_x,
        LibXR::PID<float>::Param pid_velocity_y,
        LibXR::PID<float>::Param pid_omega,
-       LibXR::PID<float>::Param pid_wheel_angle_0,
-       LibXR::PID<float>::Param pid_wheel_angle_1,
-       LibXR::PID<float>::Param pid_wheel_angle_2,
-       LibXR::PID<float>::Param pid_wheel_angle_3,
+       LibXR::PID<float>::Param pid_wheel_omega_0,
+       LibXR::PID<float>::Param pid_wheel_omega_1,
+       LibXR::PID<float>::Param pid_wheel_omega_2,
+       LibXR::PID<float>::Param pid_wheel_omega_3,
        LibXR::PID<float>::Param pid_steer_angle_0,
        LibXR::PID<float>::Param pid_steer_angle_1,
        LibXR::PID<float>::Param pid_steer_angle_2,
@@ -71,14 +72,13 @@ class Helm {
         pid_velocity_x_(pid_velocity_x),
         pid_velocity_y_(pid_velocity_y),
         pid_omega_(pid_omega),
-        pid_wheel_angle_0_(pid_wheel_angle_0),
-        pid_wheel_angle_1_(pid_wheel_angle_1),
-        pid_wheel_angle_2_(pid_wheel_angle_2),
-        pid_wheel_angle_3_(pid_wheel_angle_3),
-        pid_steer_angle_0_(pid_steer_angle_0),
-        pid_steer_angle_1_(pid_steer_angle_1),
-        pid_steer_angle_2_(pid_steer_angle_2),
-        pid_steer_angle_3_(pid_steer_angle_3) {
+        pid_wheel_omega_{pid_wheel_omega_0, pid_wheel_omega_1,
+                         pid_wheel_omega_2, pid_wheel_omega_3},
+        pid_steer_angle_{pid_steer_angle_0, pid_steer_angle_1,
+                         pid_steer_angle_2, pid_steer_angle_3} {
+    UNUSED(hw);
+    UNUSED(app);
+
     thread_.Create(this, ThreadFunction, "HelmChassisThread", task_stack_depth,
                    LibXR::Thread::Priority::MEDIUM);
   }
@@ -124,9 +124,9 @@ class Helm {
    * @details 更新所有轮向和舵向电机的反馈数据
    */
   void Update() {
-    auto now_ = LibXR::Timebase::GetMilliseconds();
-    this->dt_ = (now_ - this->last_online_time_).ToSecondf();
-    this->last_online_time_ = now_;
+    auto now = LibXR::Timebase::GetMilliseconds();
+    this->dt_ = (now - this->last_online_time_).ToSecondf();
+    this->last_online_time_ = now;
 
     for (int i = 0; i < 4; i++) {
       motor_can1_->Update(i);
@@ -185,16 +185,15 @@ class Helm {
    *          - target_steer_angle = atan2(vy, vx)
    */
   void KinematicsInverseResolution() {
-    float tmp_vx, tmp_vy, tmp_velocity_modulus;
     for (int i = 0; i < 4; ++i) {
-      tmp_vx = target_vx_ -
-               target_omega_ * wheel_to_center_ * std::sin(wheel_azimuth_[i]);
-      tmp_vy = target_vy_ +
-               target_omega_ * wheel_to_center_ * std::cos(wheel_azimuth_[i]);
-      tmp_velocity_modulus =
+      float tmp_vx = target_vx_ - target_omega_ * wheel_to_center_ *
+                                      std::sin(wheel_azimuth_[i]);
+      float tmp_vy = target_vy_ + target_omega_ * wheel_to_center_ *
+                                      std::cos(wheel_azimuth_[i]);
+      float tmp_velocity_modulus =
           std::sqrt(tmp_vx * tmp_vx + tmp_vy * tmp_vy) / wheel_radius_;
 
-      target_wheel_omega_[i] = tmp_velocity_modulus / wheel_radius_;
+      target_wheel_omega_[i] = tmp_velocity_modulus;
 
       if (tmp_velocity_modulus == 0.0f) {
         target_steer_angle_[i] = motor_can2_->GetAngle(i);
@@ -223,7 +222,7 @@ class Helm {
         target_steer_angle_[i] = tmp_delta_angle + motor_can2_->GetAngle(i);
       } else {
         target_steer_angle_[i] =
-            Math_Modulus_Normalization(tmp_delta_angle + M_PI, 2.0f * M_PI) +
+            MathModulusNormalization(tmp_delta_angle + M_PI, 2.0f * M_PI) +
             motor_can2_->GetAngle(i);
         target_wheel_omega_[i] *= -1.0f;
       }
@@ -237,10 +236,8 @@ class Helm {
    * @return 归一化后的值，范围 [-modulus/2, modulus/2]
    * @details 将角度归一化到 [-π, π] 或其他周期范围内
    */
-  float Math_Modulus_Normalization(float x, float modulus) {
-    float tmp;
-
-    tmp = fmod(x + modulus / 2.0f, modulus);
+  float MathModulusNormalization(float x, float modulus) {
+    float tmp = fmod(x + modulus / 2.0f, modulus);
 
     if (tmp < 0.0f) {
       tmp += modulus;
@@ -311,54 +308,20 @@ class Helm {
     for (int i = 0; i < 4; i++) {
       float current_steer_angle = motor_can2_->GetAngle(i);
 
-      float steer_angle_output = 0.0f;
-      switch (i) {
-        case 0:
-          steer_angle_output = pid_steer_angle_0_.Calculate(
-              target_steer_angle_[i], current_steer_angle, dt_);
-          break;
-        case 1:
-          steer_angle_output = pid_steer_angle_1_.Calculate(
-              target_steer_angle_[i], current_steer_angle, dt_);
-          break;
-        case 2:
-          steer_angle_output = pid_steer_angle_2_.Calculate(
-              target_steer_angle_[i], current_steer_angle, dt_);
-          break;
-        case 3:
-          steer_angle_output = pid_steer_angle_3_.Calculate(
-              target_steer_angle_[i], current_steer_angle, dt_);
-          break;
-      }
+      const float STEER_ANGLE_OUTPUT = pid_steer_angle_[i].Calculate(
+          target_steer_angle_[i], current_steer_angle, dt_);
 
-      float target_steer_omega = steer_angle_output;
+      float target_steer_omega = STEER_ANGLE_OUTPUT;
       float current_steer_omega = motor_can2_->GetSpeed(i);
 
-      float steer_current = 0.0f;
-      switch (i) {
-        case 0:
-          steer_current = pid_wheel_angle_0_.Calculate(
-              target_steer_omega, current_steer_omega, dt_);
-          break;
-        case 1:
-          steer_current = pid_wheel_angle_1_.Calculate(
-              target_steer_omega, current_steer_omega, dt_);
-          break;
-        case 2:
-          steer_current = pid_wheel_angle_2_.Calculate(
-              target_steer_omega, current_steer_omega, dt_);
-          break;
-        case 3:
-          steer_current = pid_wheel_angle_3_.Calculate(
-              target_steer_omega, current_steer_omega, dt_);
-          break;
-      }
+      const float STEER_CURRENT = pid_wheel_omega_[i].Calculate(
+          target_steer_omega, current_steer_omega, dt_);
 
-      motor_can2_->SetCurrent(i, steer_current);
+      motor_can2_->SetCurrent(i, STEER_CURRENT);
 
-      const float kMaxCurrent = 1.0f;
+      const float MAX_CURRENT = 1.0f;
       float wheel_current =
-          std::clamp(target_wheel_current_[i], -kMaxCurrent, kMaxCurrent);
+          std::clamp(target_wheel_current_[i], -MAX_CURRENT, MAX_CURRENT);
 
       motor_can1_->SetCurrent(i, wheel_current);
 
@@ -371,18 +334,18 @@ class Helm {
   }
 
  private:
-  const float wheel_radius_ = 0.0f;
+  float wheel_radius_ = 0.0f;
 
-  const float wheel_to_center_ = 0.0f;
+  float wheel_to_center_ = 0.0f;
 
-  const float wheel_azimuth_[4] = {
+  float wheel_azimuth_[4] = {
       M_PI / 4.0f,
       3.0f * M_PI / 4.0f,
       5.0f * M_PI / 4.0f,
       7.0f * M_PI / 4.0f,
   };
 
-  const float gravity_height_ = 0.0f;
+  float gravity_height_ = 0.0f;
 
   float target_wheel_omega_[4] = {0.0f, 0.0f, 0.0f, 0.0f};
 
@@ -416,7 +379,7 @@ class Helm {
 
   float target_omega_ = 0.0f;
 
-  float  dt_ = 0;
+  float dt_ = 0;
   LibXR::MillisecondTimestamp last_online_time_ = 0;
 
   Motor<MotorType> *motor_can1_;
@@ -427,14 +390,8 @@ class Helm {
   LibXR::PID<float> pid_velocity_y_;
   LibXR::PID<float> pid_omega_;
 
-  LibXR::PID<float> pid_wheel_angle_0_;
-  LibXR::PID<float> pid_wheel_angle_1_;
-  LibXR::PID<float> pid_wheel_angle_2_;
-  LibXR::PID<float> pid_wheel_angle_3_;
-  LibXR::PID<float> pid_steer_angle_0_;
-  LibXR::PID<float> pid_steer_angle_1_;
-  LibXR::PID<float> pid_steer_angle_2_;
-  LibXR::PID<float> pid_steer_angle_3_;
+  LibXR::PID<float> pid_wheel_omega_[4]{0.0f, 0.0f, 0.0f, 0.0f};
+  LibXR::PID<float> pid_steer_angle_[4]{0.0f, 0.0f, 0.0f, 0.0f};
 
   LibXR::Thread thread_;
   LibXR::Mutex mutex_;
