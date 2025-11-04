@@ -137,6 +137,17 @@ class Helm {
   }
 
   /**
+   * @brief 设置底盘模式 (由 Chassis 外壳调用)
+   * @param mode 要设置的新模式
+   */
+  void SetMode(uint32_t mode) {
+    mutex_.Lock();
+    chassis_event_ = mode;
+    mutex_.Unlock();
+  }
+
+
+  /**
    * @brief 更新底盘控制指令状态
    * @details 从CDM获取底盘控制指令
    */
@@ -397,4 +408,5 @@ class Helm {
   LibXR::Mutex mutex_;
 
   CMD::ChassisCMD cmd_data_;
+  uint32_t chassis_event_ = 0;
 };
