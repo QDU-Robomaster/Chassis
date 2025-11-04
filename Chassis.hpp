@@ -22,7 +22,7 @@ constructor_args:
       out_limit: 0.0
       cycle: false
 template_args:
-  - ChassisType: Helm<RMMotorContainer>
+  - ChassisType: Omni<RMMotorContainer>
   - MotorType: RMMotorContainer
 required_hardware:
   - dr16
