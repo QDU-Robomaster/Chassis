@@ -114,8 +114,8 @@ class Helm {
       helm->KinematicsInverseResolution();
       helm->mutex_.Unlock();
       helm->OutputToDynamics();
-
-      helm->thread_.SleepUntil(helm->last_online_time_, 2.0f);
+      auto last_time = LibXR::Timebase::GetMilliseconds();
+      helm->thread_.SleepUntil(last_time, 2.0f);
     }
   }
 
@@ -124,10 +124,6 @@ class Helm {
    * @details 更新所有轮向和舵向电机的反馈数据
    */
   void Update() {
-    auto now = LibXR::Timebase::GetMilliseconds();
-    this->dt_ = (now - this->last_online_time_).ToSecondf();
-    this->last_online_time_ = now;
-
     for (int i = 0; i < 4; i++) {
       motor_can1_->Update(i);
     }
@@ -276,6 +272,9 @@ class Helm {
    *            - 轮向电机: 直接电流控制（来自动力学逆解算）
    */
   void OutputToDynamics() {
+    auto now = LibXR::Timebase::GetMicroseconds();
+    this->dt_ = (now - this->last_online_time_).ToSecondf();
+    this->last_online_time_ = now;
     // ========== 第1层：底盘级PID控制 ==========
     float current_vx = now_vx_;
     float current_vy = now_vy_;
@@ -336,7 +335,7 @@ class Helm {
 
       motor_can1_->SetCurrent(i, wheel_current);
 
-      while (target_vx_ == 0.0f && target_vy_ == 0.0f &&
+      if (target_vx_ == 0.0f && target_vy_ == 0.0f &&
              target_omega_ == 0.0f) {
         motor_can2_->SetCurrent(i, 0.0f);
         motor_can1_->SetCurrent(i, 0.0f);
@@ -391,7 +390,7 @@ class Helm {
   float target_omega_ = 0.0f;
 
   float dt_ = 0;
-  LibXR::MillisecondTimestamp last_online_time_ = 0;
+  LibXR::MicrosecondTimestamp last_online_time_ = 0;
 
   Motor<MotorType> *motor_can1_;
   Motor<MotorType> *motor_can2_;

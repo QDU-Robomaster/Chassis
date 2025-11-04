@@ -74,16 +74,12 @@ class Mecanum {
       mecanum->KinematicsInverseResolution();
       mecanum->mutex_.Unlock();
       mecanum->OutputToDynamics();
-
-      mecanum->thread_.SleepUntil(mecanum->last_online_time_, 2.0f);
+      auto last_time = LibXR::Timebase::GetMilliseconds();
+      mecanum->thread_.SleepUntil(last_time, 2.0f);
     }
   }
 
   void Update() {
-    auto now = LibXR::Timebase::GetMilliseconds();
-    this->dt_ = (now - this->last_online_time_).ToSecondf();
-    this->last_online_time_ = now;
-
     for (int i = 0; i < 4; i++) {
       motor_can1_->Update(i);
     }
@@ -202,6 +198,9 @@ class Mecanum {
    *            - 限制最大电流，输出到电机
    */
   void OutputToDynamics() {
+    auto now = LibXR::Timebase::GetMicroseconds();
+    this->dt_ = (now - this->last_online_time_).ToSecondf();
+    this->last_online_time_ = now;
 
     float current_vx = now_vx_;
     float current_vy = now_vy_;
@@ -253,7 +252,7 @@ class Mecanum {
 
       motor_can1_->SetCurrent(i, wheel_current);
 
-      while (target_vx_ == 0.0f && target_vy_ == 0.0f &&
+      if (target_vx_ == 0.0f && target_vy_ == 0.0f &&
              target_omega_ == 0.0f) {
         motor_can1_->SetCurrent(i, 0.0f);
       }
@@ -306,7 +305,7 @@ class Mecanum {
   float max_current_ = 1.0f;
 
   float dt_ = 0;
-  LibXR::MillisecondTimestamp last_online_time_ = 0;
+  LibXR::MicrosecondTimestamp last_online_time_ = 0;
 
   Motor<MotorType> *motor_can1_;
   Motor<MotorType> *motor_can2_;

@@ -78,8 +78,8 @@ class Omni {
       omni->KinematicsInverseResolution();
       omni->mutex_.Unlock();
       omni->OutputToDynamics();
-
-      omni->thread_.SleepUntil(omni->last_online_time_, 2.0f);
+      auto last_time = LibXR::Timebase::GetMilliseconds();
+      omni->thread_.SleepUntil(last_time, 2.0f);
     }
   }
 
@@ -88,12 +88,7 @@ class Omni {
    * @details 更新所有轮向电机的反馈数据
    */
   void Update() {
-    auto now = LibXR::Timebase::GetMilliseconds();
-    this->dt_ = (now - this->last_online_time_).ToSecondf();
-    this->last_online_time_ = now;
-    for (int i = 0; i < 4; i++) {
-      motor_can1_->Update(i);
-    }
+      motor_can1_->Update();
   }
 
   /**
@@ -137,7 +132,9 @@ class Omni {
     now_omega_ = 0.0f;
 
     for (int i = 0; i < 4; i++) {
-      float wheel_velocity = motor_can1_->GetSpeed(i) * wheel_radius_;
+      float wheel_angular_velocity_rad_s =
+          motor_can1_->GetSpeed(i) * (2.0f * M_PI / 60.0f);
+      float wheel_velocity = wheel_angular_velocity_rad_s * wheel_radius_;
       float theta = wheel_azimuth_[i];
       float cos_theta = std::cos(theta);
       float sin_theta = std::sin(theta);
@@ -203,6 +200,10 @@ class Omni {
    *            - 限制最大电流，输出到电机
    */
   void OutputToDynamics() {
+    auto now = LibXR::Timebase::GetMicroseconds();
+    this->dt_ = (now - this->last_online_time_).ToSecondf();
+    this->last_online_time_ = now;
+
     float current_vx = now_vx_;
     float current_vy = now_vy_;
     float current_omega = now_omega_;
@@ -223,14 +224,15 @@ class Omni {
     wheel_force[2] = (SQRT2 * force_x - SQRT2 * force_y + torque_factor) /
                      4.0f * wheel_radius_;
     wheel_force[3] = (SQRT2 * force_x + SQRT2 * force_y + torque_factor) /
-                     4.0f * wheel_radius_;
+                      4.0f * wheel_radius_;
 
     for (int i = 0; i < 4; i++) {
-      float current_wheel_omega = motor_can1_->GetSpeed(i);
+      float current_wheel_omega_rad_s =
+          motor_can1_->GetSpeed(i) * (2.0f * M_PI / 60.0f);
 
       target_wheel_current_[i] =
           wheel_force[i] +
-          error_compensation_ * (target_wheel_omega_[i] - current_wheel_omega);
+          error_compensation_ * (target_wheel_omega_[i] - current_wheel_omega_rad_s);
 
       if (target_wheel_omega_[i] > wheel_resistance_) {
         target_wheel_current_[i] += dynamic_wheel_current_[i];
@@ -238,24 +240,24 @@ class Omni {
         target_wheel_current_[i] -= dynamic_wheel_current_[i];
       } else {
         target_wheel_current_[i] +=
-            current_wheel_omega / wheel_resistance_ * dynamic_wheel_current_[i];
+            current_wheel_omega_rad_s / wheel_resistance_ * dynamic_wheel_current_[i];
       }
     }
 
     for (int i = 0; i < 4; i++) {
-      float current_wheel_omega = motor_can1_->GetSpeed(i);
+      float current_wheel_omega_rad_s =
+          motor_can1_->GetSpeed(i) * (2.0f * M_PI / 60.0f);
 
       float wheel_current = 0.0f;
-      wheel_current = pid_wheel_omega_[i].Calculate(target_wheel_omega_[i], current_wheel_omega, dt_);
-
-      wheel_current += target_wheel_current_[i];
+      wheel_current = pid_wheel_omega_[i].Calculate(
+          target_wheel_omega_[i], current_wheel_omega_rad_s, dt_);      wheel_current += target_wheel_current_[i];
 
       const float MAX_CURRENT = 1.0f;
       wheel_current = std::clamp(wheel_current, -MAX_CURRENT, MAX_CURRENT);
 
       motor_can1_->SetCurrent(i, wheel_current);
 
-      while (target_vx_ == 0.0f && target_vy_ == 0.0f &&
+      if (target_vx_ == 0.0f && target_vy_ == 0.0f &&
              target_omega_ == 0.0f) {
         motor_can1_->SetCurrent(i, 0.0f);
       }
@@ -309,7 +311,7 @@ class Omni {
   float target_omega_ = 0.0f;
 
   float dt_ = 0;
-  LibXR::MillisecondTimestamp last_online_time_ = 0;
+  LibXR::MicrosecondTimestamp last_online_time_ = 0;
 
   Motor<MotorType> *motor_can1_;
   Motor<MotorType> *motor_can2_;
