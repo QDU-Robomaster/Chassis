@@ -9,14 +9,18 @@ required_hardware: []
 depends: []
 === END MANIFEST === */
 // clang-format on
+#include <algorithm>
 #include <cmath>
 
 #include "CMD.hpp"
 #include "Chassis.hpp"
 #include "Motor.hpp"
 #include "app_framework.hpp"
+#include "libxr_def.hpp"
 #include "libxr_time.hpp"
 #include "pid.hpp"
+
+#define MOTOR_MAX_ROTATIONAL_SPEED 9600 /* 电机最大转速 */
 
 template <typename MotorType>
 class Mecanum {
@@ -36,9 +40,9 @@ class Mecanum {
           LibXR::PID<float>::Param pid_steer_angle_1,
           LibXR::PID<float>::Param pid_steer_angle_2,
           LibXR::PID<float>::Param pid_steer_angle_3)
-      : wheel_radius_(wheel_radius),
-        wheel_to_center_(wheel_to_center),
-        gravity_height_(gravity_height),
+      : r_wheel_(wheel_radius),
+        r_center_(wheel_to_center),
+        g_height_(gravity_height),
         wheel_resistance_(wheel_resistance),
         error_compensation_(error_compensation),
         motor_can1_(&motor_can1),
@@ -71,18 +75,24 @@ class Mecanum {
       mecanum->Update();
       mecanum->UpdateSetpointFromCMD();
       mecanum->SelfResolution();
-      mecanum->KinematicsInverseResolution();
+      mecanum->InverseKinematicsSolution();
+      mecanum->DynamicInverseSolution();
       mecanum->mutex_.Unlock();
       mecanum->OutputToDynamics();
-      auto last_time = LibXR::Timebase::GetMilliseconds();
-      mecanum->thread_.SleepUntil(last_time, 2.0f);
+
+      mecanum->thread_.Sleep(2);
+
+      // auto last_time = LibXR::Timebase::GetMilliseconds();
+      // mecanum->thread_.SleepUntil(last_time, 2.0f);
     }
   }
 
   void Update() {
-    for (int i = 0; i < 4; i++) {
-      motor_can1_->Update(i);
-    }
+    auto now = LibXR::Timebase::GetMicroseconds();
+    dt_ = (now - last_online_time_).ToSecondf();
+    last_online_time_ = now;
+
+    motor_can1_->Update();
   }
 
   /**
@@ -108,179 +118,95 @@ class Mecanum {
   /**
    * @brief 麦轮底盘正运动学解算
    * @details 根据四个麦轮的角速度，解算出底盘当前的运动状态
-   *
-   *          麦轮运动学模型：
-   *          - 滚子方向 n = (cosθ, sinθ)，其中 θ 为轮组方位角
-   *          - 麦轮线速度方向 m = (cosγ, sinγ)，其中 γ = θ - π/4
-   *          - n 与 m 之间夹角为 45°
-   *
-   *          从电机角速度反推底盘速度：
-   *          Wheel_Omega = ((vx - ω*ry)*cosθ + (vy + ω*rx)*sinθ) / cos(γ-θ) / s
-   *
-   *          其中 cos(γ-θ) = cos(π/4) = √2/2
-   *
-   *          通过四个轮子的速度建立超定方程组求解 vx, vy, ω
    */
   void SelfResolution() {
-    const float COS_ROLLER_ANGLE = 0.70710678118f;  // cos(45°) = √2/2
-
-    now_vx_ = 0.0f;
-    now_vy_ = 0.0f;
-    now_omega_ = 0.0f;
-
-    for (int i = 0; i < 4; i++) {
-      float v_projected =
-          motor_can1_->GetSpeed(i) * wheel_radius_ * COS_ROLLER_ANGLE;
-      float cos_theta = std::cos(wheel_azimuth_[i]);
-      float sin_theta = std::sin(wheel_azimuth_[i]);
-
-      now_vx_ += v_projected * cos_theta / 4.0f;
-      now_vy_ += v_projected * sin_theta / 4.0f;
-      now_omega_ += (-v_projected / wheel_to_center_) / 4.0f;
-    }
+    now_vx_ = (-motor_can1_->GetSpeed(0) - motor_can1_->GetSpeed(1) +
+               motor_can1_->GetSpeed(2) + motor_can1_->GetSpeed(3)) *
+              r_wheel_ / 4.0f;
+    now_vy_ = (motor_can1_->GetSpeed(0) - motor_can1_->GetSpeed(1) -
+               motor_can1_->GetSpeed(2) + motor_can1_->GetSpeed(3)) *
+              r_wheel_ / 4.0f;
+    now_omega_ = (motor_can1_->GetSpeed(0) + motor_can1_->GetSpeed(1) +
+                  motor_can1_->GetSpeed(2) + motor_can1_->GetSpeed(3)) *
+                 r_wheel_ / (4.0f * r_center_);
   }
 
   /**
    * @brief 麦轮底盘逆运动学解算
    * @details 根据目标底盘速度（vx, vy, ω），计算四个麦轮的目标角速度
-   *
-   *          麦轮逆运动学公式：
-   *          Wheel_Omega = ((vx - ω*ry)*cosθ + (vy + ω*rx)*sinθ) / cos(45°) /
-   * wheel_radius
-   *
-   *          其中：
-   *          - (rx, ry) 是轮子相对底盘中心的位置（极坐标转直角坐标）
-   *          - θ 是轮组方位角
-   *          - cos(45°) = √2/2 ≈ 0.707
    */
-  void KinematicsInverseResolution() {
-    const float COS_ROLLER_ANGLE = 0.70710678118f;  // cos(45°) = √2/2
-
-    for (int i = 0; i < 4; i++) {
-      float r = wheel_to_center_;
-      float theta = wheel_azimuth_[i];
-      float cos_theta = std::cos(theta);
-      float sin_theta = std::sin(theta);
-
-      float rx = r * cos_theta;
-      float ry = r * sin_theta;
-
-      float wheel_velocity = ((target_vx_ - target_omega_ * ry) * cos_theta +
-                              (target_vy_ + target_omega_ * rx) * sin_theta) /
-                             COS_ROLLER_ANGLE;
-
-      target_wheel_omega_[i] = wheel_velocity / wheel_radius_;
-    }
+  void InverseKinematicsSolution() {
+    target_motor_omega_[0] = (-target_vx_ + target_vy_ + target_omega_);
+    target_motor_omega_[1] = (-target_vx_ - target_vy_ + target_omega_);
+    target_motor_omega_[2] = (target_vx_ - target_vy_ + target_omega_);
+    target_motor_omega_[3] = (target_vx_ + target_vy_ + target_omega_);
   }
 
   /**
-   * @brief 麦轮底盘动力学控制输出
-   * @details 三层控制架构（完全仿照Helm舵轮底盘）:
-   *
-   *          【第1层】底盘级PID控制:
-   *            - pid_velocity_x: X方向速度 → force_x (所需力)
-   *            - pid_velocity_y: Y方向速度 → force_y (所需力)
-   *            - pid_omega: 角速度 → torque (所需扭矩)
-   *
-   *          【动力学逆解算】麦轮力分配:
-   *            假设轮子半径为 s，底盘半长为 a，半宽为 b
-   *
-   *            Motor0 = (-Fx + Fy + T/(a+b)) / 4 * s
-   *            Motor1 = (-Fx - Fy + T/(a+b)) / 4 * s
-   *            Motor2 = (Fx - Fy + T/(a+b)) / 4 * s
-   *            Motor3 = (Fx + Fy + T/(a+b)) / 4 * s
-   *
-   *          【第2层】电机角速度PID控制:
-   *            - pid_wheel_angle_X: 目标角速度 → 电流输出
-   *            - 添加动摩擦阻力前馈补偿
-   *
-   *          【第3层】电流限幅与输出:
-   *            - 限制最大电流，输出到电机
+   * @brief 麦轮底盘逆动力学解算
+   * @details
+   * 通过运动学正解算出底盘现在的运动状态，并与目标状态进行PID控制，获得目标前馈力矩
    */
+  void DynamicInverseSolution() {
+    float force_x = pid_velocity_x_.Calculate(
+        target_vx_ * MOTOR_MAX_ROTATIONAL_SPEED, now_vx_, dt_);
+    float force_y = pid_velocity_y_.Calculate(
+        target_vy_ * MOTOR_MAX_ROTATIONAL_SPEED, now_vy_, dt_);
+    float torque = pid_omega_.Calculate(target_omega_ * MOTOR_MAX_ROTATIONAL_SPEED,
+                                        now_omega_, dt_);
+
+    target_motor_force_[0] = (-force_x / 4 * r_wheel_ + force_y / 4 * r_wheel_ +
+                              torque * r_center_ / 4 / r_wheel_);
+    target_motor_force_[1] = (-force_x / 4 * r_wheel_ - force_y / 4 * r_wheel_ +
+                              torque * r_center_ / 4 / r_wheel_);
+    target_motor_force_[2] = (force_x / 4 * r_wheel_ - force_y / 4 * r_wheel_ +
+                              torque * r_center_ / 4 / r_wheel_);
+    target_motor_force_[3] = (force_x / 4 * r_wheel_ + force_y / 4 * r_wheel_ +
+                              torque * r_center_ / 4 / r_wheel_);
+  }
+
+  /**
+   * @brief 麦轮底盘动力学输出
+   * @details
+   * 限幅并输出四个麦轮的电流控制指令
+   */
+
   void OutputToDynamics() {
-    auto now = LibXR::Timebase::GetMicroseconds();
-    this->dt_ = (now - this->last_online_time_).ToSecondf();
-    this->last_online_time_ = now;
-
-    float current_vx = now_vx_;
-    float current_vy = now_vy_;
-    float current_omega = now_omega_;
-
-    float force_x = pid_velocity_x_.Calculate(target_vx_, current_vx, dt_);
-    float force_y = pid_velocity_y_.Calculate(target_vy_, current_vy, dt_);
-    float torque = pid_omega_.Calculate(target_omega_, current_omega, dt_);
-
-    float torque_factor = torque / wheel_to_center_;
-
-    float wheel_force[4];
-    wheel_force[0] =
-        (-force_x + force_y + torque_factor) / 4.0f * wheel_radius_;  // 左前
-    wheel_force[1] =
-        (-force_x - force_y + torque_factor) / 4.0f * wheel_radius_;  // 左后
-    wheel_force[2] =
-        (force_x - force_y + torque_factor) / 4.0f * wheel_radius_;  // 右后
-    wheel_force[3] =
-        (force_x + force_y + torque_factor) / 4.0f * wheel_radius_;  // 右前
+    target_motor_current_[0] = pid_wheel_omega_[0].Calculate(
+        target_motor_omega_[0] * MOTOR_MAX_ROTATIONAL_SPEED,
+        motor_can1_->GetSpeed(0), dt_);
+    target_motor_current_[1] = pid_wheel_omega_[1].Calculate(
+        target_motor_omega_[1] * MOTOR_MAX_ROTATIONAL_SPEED,
+        motor_can1_->GetSpeed(1), dt_);
+    target_motor_current_[2] = pid_wheel_omega_[2].Calculate(
+        target_motor_omega_[2] * MOTOR_MAX_ROTATIONAL_SPEED,
+        motor_can1_->GetSpeed(2), dt_);
+    target_motor_current_[3] = pid_wheel_omega_[3].Calculate(
+        target_motor_omega_[3] * MOTOR_MAX_ROTATIONAL_SPEED,
+        motor_can1_->GetSpeed(3), dt_);
 
     for (int i = 0; i < 4; i++) {
-      float current_wheel_omega = motor_can1_->GetSpeed(i);
-
-      target_wheel_current_[i] =
-          wheel_force[i] + error_compensation_ *
-                               (target_wheel_omega_[i] - current_wheel_omega);
-
-      if (target_wheel_omega_[i] > wheel_resistance_) {
-        target_wheel_current_[i] += dynamic_wheel_current_[i];
-      } else if (target_wheel_omega_[i] < -wheel_resistance_) {
-        target_wheel_current_[i] -= dynamic_wheel_current_[i];
-      } else {
-        target_wheel_current_[i] += current_wheel_omega /
-                                    wheel_resistance_ *
-                                    dynamic_wheel_current_[i];
-      }
+      output_[i] = std::clamp(target_motor_current_[i] + target_motor_force_[i],
+                              -max_current_, max_current_);
     }
 
-    for (int i = 0; i < 4; i++) {
-      float current_wheel_omega = motor_can1_->GetSpeed(i);
-
-      float wheel_current = pid_wheel_omega_[i].Calculate(
-          target_wheel_omega_[i], current_wheel_omega, dt_);
-
-      wheel_current += target_wheel_current_[i];
-
-      wheel_current = std::clamp(wheel_current, -max_current_, max_current_);
-
-      motor_can1_->SetCurrent(i, wheel_current);
-
-      if (target_vx_ == 0.0f && target_vy_ == 0.0f &&
-             target_omega_ == 0.0f) {
-        motor_can1_->SetCurrent(i, 0.0f);
-      }
-
-    }
+    motor_can1_->SetCurrent(0, output_[0]);
+    motor_can1_->SetCurrent(1, output_[1]);
+    motor_can1_->SetCurrent(2, output_[2]);
+    motor_can1_->SetCurrent(3, output_[3]);
   }
 
  private:
-   float wheel_radius_ = 0.0f;
+  float r_wheel_ = 0.0f;
 
-   float wheel_to_center_ = 0.0f;
+  float r_center_ = 0.0f;
 
-   float wheel_azimuth_[4] = {
-      M_PI / 4.0f,
-      3.0f * M_PI / 4.0f,
-      5.0f * M_PI / 4.0f,
-      7.0f * M_PI / 4.0f,
-  };
+  float g_height_ = 0.0f;
 
-   float gravity_height_ = 0.0f;
-
-  float target_wheel_omega_[4] = {0.0f, 0.0f, 0.0f, 0.0f};
-
-  float target_wheel_current_[4] = {0.0f, 0.0f, 0.0f, 0.0f};
-
-  float static_wheel_current_[4] = {0.0f, 0.0f, 0.0f, 0.0f};
-
-  float dynamic_wheel_current_[4] = {0.0f, 0.0f, 0.0f, 0.0f};
+  float target_motor_omega_[4]{0.0f, 0.0f, 0.0f, 0.0f};
+  float target_motor_force_[4]{0.0f, 0.0f, 0.0f, 0.0f};
+  float target_motor_current_[4]{0.0f, 0.0f, 0.0f, 0.0f};
+  float output_[4]{0.0f, 0.0f, 0.0f, 0.0f};
 
   /*若轮子出现明显阻力使用标定法获得此参数*/
   float wheel_resistance_ = 0.0f;
@@ -290,13 +216,6 @@ class Mecanum {
   float now_vx_ = 0.0f;
   float now_vy_ = 0.0f;
   float now_omega_ = 0.0f;
-
-  float angle_pitch_ = 0.0f;
-  float angle_roll_ = 0.0f;
-
-  float slope_direction_x_ = 0.0f;
-  float slope_direction_y_ = 0.0f;
-  float slope_direction_z_ = 0.0f;
 
   float target_vx_ = 0.0f;
   float target_vy_ = 0.0f;
