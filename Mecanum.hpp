@@ -21,7 +21,9 @@ depends: []
 #include "pid.hpp"
 
 #define MOTOR_MAX_ROTATIONAL_SPEED 9600 /* 电机最大转速 */
-
+#define MAXIMUM_ANGULAR_SPEED_OF_MOTOR_OUTPUT_SHAFT \
+  52                                     /* 电机输出轴最大角速度 */
+#define ANGULAR_VELOCITY_COEFFICIENT 315 /* 角速度系数 */
 template <typename MotorType>
 class Mecanum {
  public:
@@ -111,8 +113,8 @@ class Mecanum {
    */
   void UpdateSetpointFromCMD() {
     target_vx_ = cmd_data_.x;
-    target_vy_ = cmd_data_.y;
-    target_omega_ = cmd_data_.z;
+    target_vy_ = -cmd_data_.y;
+    target_omega_ = -cmd_data_.z;
   }
 
   /**
@@ -120,14 +122,14 @@ class Mecanum {
    * @details 根据四个麦轮的角速度，解算出底盘当前的运动状态
    */
   void SelfResolution() {
-    now_vx_ = (-motor_can1_->GetSpeed(0) - motor_can1_->GetSpeed(1) +
-               motor_can1_->GetSpeed(2) + motor_can1_->GetSpeed(3)) *
+    now_vx_ = (-motor_can1_->GetOmega(0) - motor_can1_->GetOmega(1) +
+               motor_can1_->GetOmega(2) + motor_can1_->GetOmega(3)) *
               r_wheel_ / 4.0f;
-    now_vy_ = (motor_can1_->GetSpeed(0) - motor_can1_->GetSpeed(1) -
-               motor_can1_->GetSpeed(2) + motor_can1_->GetSpeed(3)) *
+    now_vy_ = (motor_can1_->GetOmega(0) - motor_can1_->GetOmega(1) -
+               motor_can1_->GetOmega(2) + motor_can1_->GetOmega(3)) *
               r_wheel_ / 4.0f;
-    now_omega_ = (motor_can1_->GetSpeed(0) + motor_can1_->GetSpeed(1) +
-                  motor_can1_->GetSpeed(2) + motor_can1_->GetSpeed(3)) *
+    now_omega_ = (motor_can1_->GetOmega(0) + motor_can1_->GetOmega(1) +
+                  motor_can1_->GetOmega(2) + motor_can1_->GetOmega(3)) *
                  r_wheel_ / (4.0f * r_center_);
   }
 
@@ -136,10 +138,14 @@ class Mecanum {
    * @details 根据目标底盘速度（vx, vy, ω），计算四个麦轮的目标角速度
    */
   void InverseKinematicsSolution() {
-    target_motor_omega_[0] = (-target_vx_ + target_vy_ + target_omega_);
-    target_motor_omega_[1] = (-target_vx_ - target_vy_ + target_omega_);
-    target_motor_omega_[2] = (target_vx_ - target_vy_ + target_omega_);
-    target_motor_omega_[3] = (target_vx_ + target_vy_ + target_omega_);
+    target_motor_omega_[0] = (-target_vx_ + target_vy_ + target_omega_) *
+                             MAXIMUM_ANGULAR_SPEED_OF_MOTOR_OUTPUT_SHAFT;
+    target_motor_omega_[1] = (-target_vx_ - target_vy_ + target_omega_) *
+                             MAXIMUM_ANGULAR_SPEED_OF_MOTOR_OUTPUT_SHAFT;
+    target_motor_omega_[2] = (target_vx_ - target_vy_ + target_omega_) *
+                             MAXIMUM_ANGULAR_SPEED_OF_MOTOR_OUTPUT_SHAFT;
+    target_motor_omega_[3] = (target_vx_ + target_vy_ + target_omega_) *
+                             MAXIMUM_ANGULAR_SPEED_OF_MOTOR_OUTPUT_SHAFT;
   }
 
   /**
@@ -149,11 +155,14 @@ class Mecanum {
    */
   void DynamicInverseSolution() {
     float force_x = pid_velocity_x_.Calculate(
-        target_vx_ * MOTOR_MAX_ROTATIONAL_SPEED, now_vx_, dt_);
+        target_vx_ * MAXIMUM_ANGULAR_SPEED_OF_MOTOR_OUTPUT_SHAFT * r_wheel_,
+        now_vx_, dt_);
     float force_y = pid_velocity_y_.Calculate(
-        target_vy_ * MOTOR_MAX_ROTATIONAL_SPEED, now_vy_, dt_);
-    float torque = pid_omega_.Calculate(target_omega_ * MOTOR_MAX_ROTATIONAL_SPEED,
-                                        now_omega_, dt_);
+        target_vy_ * MAXIMUM_ANGULAR_SPEED_OF_MOTOR_OUTPUT_SHAFT * r_wheel_,
+        now_vy_, dt_);
+    float torque = pid_omega_.Calculate(
+        target_omega_ * MAXIMUM_ANGULAR_SPEED_OF_MOTOR_OUTPUT_SHAFT * r_center_,
+        now_omega_, dt_);
 
     target_motor_force_[0] = (-force_x / 4 * r_wheel_ + force_y / 4 * r_wheel_ +
                               torque * r_center_ / 4 / r_wheel_);
@@ -173,21 +182,17 @@ class Mecanum {
 
   void OutputToDynamics() {
     target_motor_current_[0] = pid_wheel_omega_[0].Calculate(
-        target_motor_omega_[0] * MOTOR_MAX_ROTATIONAL_SPEED,
-        motor_can1_->GetSpeed(0), dt_);
+        target_motor_omega_[0], motor_can1_->GetOmega(0), dt_);
     target_motor_current_[1] = pid_wheel_omega_[1].Calculate(
-        target_motor_omega_[1] * MOTOR_MAX_ROTATIONAL_SPEED,
-        motor_can1_->GetSpeed(1), dt_);
+        target_motor_omega_[1], motor_can1_->GetOmega(1), dt_);
     target_motor_current_[2] = pid_wheel_omega_[2].Calculate(
-        target_motor_omega_[2] * MOTOR_MAX_ROTATIONAL_SPEED,
-        motor_can1_->GetSpeed(2), dt_);
+        target_motor_omega_[2], motor_can1_->GetOmega(2), dt_);
     target_motor_current_[3] = pid_wheel_omega_[3].Calculate(
-        target_motor_omega_[3] * MOTOR_MAX_ROTATIONAL_SPEED,
-        motor_can1_->GetSpeed(3), dt_);
+        target_motor_omega_[3], motor_can1_->GetOmega(3), dt_);
 
     for (int i = 0; i < 4; i++) {
-      output_[i] = std::clamp(target_motor_current_[i] + target_motor_force_[i],
-                              -max_current_, max_current_);
+      output_[i] = (target_motor_current_[i] + target_motor_force_[i]) *
+                   ANGULAR_VELOCITY_COEFFICIENT;
     }
 
     motor_can1_->SetCurrent(0, output_[0]);
