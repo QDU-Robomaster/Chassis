@@ -82,10 +82,8 @@ class Mecanum {
       mecanum->mutex_.Unlock();
       mecanum->OutputToDynamics();
 
-      mecanum->thread_.Sleep(2);
-
-      // auto last_time = LibXR::Timebase::GetMilliseconds();
-      // mecanum->thread_.SleepUntil(last_time, 2.0f);
+      auto last_time = LibXR::Timebase::GetMilliseconds();
+      mecanum->thread_.SleepUntil(last_time, 2.0f);
     }
   }
 
