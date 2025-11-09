@@ -79,7 +79,7 @@ class Omni {
       omni->DynamicInverseSolution();
       omni->mutex_.Unlock();
       omni->OutputToDynamics();
-      
+
       auto last_time = LibXR::Timebase::GetMilliseconds();
       omni->thread_.SleepUntil(last_time, 2.0f);
     }
@@ -114,16 +114,16 @@ class Omni {
   void SelfResolution() {
     const float SQRT2 = 1.41421356237f;
     now_vx_ =
-        (-motor_can1_->GetSpeed(0) * M_2PI - motor_can1_->GetSpeed(1) * M_2PI +
-         motor_can1_->GetSpeed(2) * M_2PI + motor_can1_->GetSpeed(3) * M_2PI) *
+        (-motor_can1_->GetRPM(0) * M_2PI - motor_can1_->GetRPM(1) * M_2PI +
+         motor_can1_->GetRPM(2) * M_2PI + motor_can1_->GetRPM(3) * M_2PI) *
         SQRT2 * r_wheel_ / 4.0f;
     now_vy_ =
-        (motor_can1_->GetSpeed(0) * M_2PI - motor_can1_->GetSpeed(1) * M_2PI -
-         motor_can1_->GetSpeed(2) * M_2PI + motor_can1_->GetSpeed(3) * M_2PI) *
+        (motor_can1_->GetRPM(0) * M_2PI - motor_can1_->GetRPM(1) * M_2PI -
+         motor_can1_->GetRPM(2) * M_2PI + motor_can1_->GetRPM(3) * M_2PI) *
         SQRT2 * r_wheel_ / 4.0f;
     now_omega_ =
-        (motor_can1_->GetSpeed(0) * M_2PI + motor_can1_->GetSpeed(1) * M_2PI +
-         motor_can1_->GetSpeed(2) * M_2PI + motor_can1_->GetSpeed(3) * M_2PI) *
+        (motor_can1_->GetRPM(0) * M_2PI + motor_can1_->GetRPM(1) * M_2PI +
+         motor_can1_->GetRPM(2) * M_2PI + motor_can1_->GetRPM(3) * M_2PI) *
         r_wheel_ / (4.0f * r_center_);
   }
 
@@ -185,13 +185,13 @@ class Omni {
           target_motor_force_[i] + target_motor_force_[i];
     }
     output_[0] = pid_wheel_omega_[0].Calculate(
-        target_motor_current_[0], motor_can1_->GetSpeed(0) * M_2PI, dt_);
+        target_motor_current_[0], motor_can1_->GetRPM(0) * M_2PI, dt_);
     output_[1] = pid_wheel_omega_[1].Calculate(
-        target_motor_current_[1], motor_can1_->GetSpeed(1) * M_2PI, dt_);
+        target_motor_current_[1], motor_can1_->GetRPM(1) * M_2PI, dt_);
     output_[2] = pid_wheel_omega_[2].Calculate(
-        target_motor_current_[2], motor_can1_->GetSpeed(2) * M_2PI, dt_);
+        target_motor_current_[2], motor_can1_->GetRPM(2) * M_2PI, dt_);
     output_[3] = pid_wheel_omega_[3].Calculate(
-        target_motor_current_[3], motor_can1_->GetSpeed(3) * M_2PI, dt_);
+        target_motor_current_[3], motor_can1_->GetRPM(3) * M_2PI, dt_);
 
     for (int i = 0; i < 4; i++) {
       output_[i] = std::clamp(output_[i], -max_current_, max_current_);

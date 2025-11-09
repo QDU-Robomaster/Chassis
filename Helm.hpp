@@ -166,11 +166,11 @@ class Helm {
     now_omega_ = 0.0f;
 
     for (int i = 0; i < 4; i++) {
-      now_vx_ += (motor_can1_->GetSpeed(i) *
-                  std::cos(motor_can1_->GetSpeed(i)) * wheel_radius_) /
+      now_vx_ += (motor_can1_->GetRPM(i) *
+                  std::cos(motor_can1_->GetRPM(i)) * wheel_radius_) /
                  4.0f;
-      now_vy_ += (motor_can1_->GetSpeed(i) *
-                  std::cos(motor_can1_->GetSpeed(i)) * wheel_radius_) /
+      now_vy_ += (motor_can1_->GetRPM(i) *
+                  std::cos(motor_can1_->GetRPM(i)) * wheel_radius_) /
                  4.0f;
       now_omega_ += (motor_can2_->GetAngle(i) *
                      std::sin(motor_can2_->GetAngle(i) - wheel_azimuth_[i]) *
@@ -299,7 +299,7 @@ class Helm {
     }
 
     for (int i = 0; i < 4; i++) {
-      float current_wheel_omega = motor_can1_->GetSpeed(i);
+      float current_wheel_omega = motor_can1_->GetRPM(i);
 
       target_wheel_current_[i] =
           tmp_force[i] * wheel_radius_ +
@@ -322,7 +322,7 @@ class Helm {
           target_steer_angle_[i], current_steer_angle, dt_);
 
       float target_steer_omega = STEER_ANGLE_OUTPUT;
-      float current_steer_omega = motor_can2_->GetSpeed(i);
+      float current_steer_omega = motor_can2_->GetRPM(i);
 
       const float STEER_CURRENT = pid_wheel_omega_[i].Calculate(
           target_steer_omega, current_steer_omega, dt_);
