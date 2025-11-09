@@ -110,9 +110,10 @@ class Mecanum {
    * @details 从CDM获取底盘控制指令
    */
   void UpdateSetpointFromCMD() {
-    target_vx_ = cmd_data_.x;
-    target_vy_ = -cmd_data_.y;
-    target_omega_ = -cmd_data_.z;
+    target_vx_ =
+        cmd_data_.y * MAXIMUM_ANGULAR_SPEED_OF_MOTOR_OUTPUT_SHAFT * r_wheel_;
+    target_vy_ = cmd_data_.x * MAXIMUM_ANGULAR_SPEED_OF_MOTOR_OUTPUT_SHAFT * r_wheel_;
+    target_omega_ = -cmd_data_.z * MAXIMUM_ANGULAR_SPEED_OF_MOTOR_OUTPUT_SHAFT * r_center_;
   }
 
   /**
@@ -136,14 +137,10 @@ class Mecanum {
    * @details 根据目标底盘速度（vx, vy, ω），计算四个麦轮的目标角速度
    */
   void InverseKinematicsSolution() {
-    target_motor_omega_[0] = (-target_vx_ + target_vy_ + target_omega_) *
-                             MAXIMUM_ANGULAR_SPEED_OF_MOTOR_OUTPUT_SHAFT;
-    target_motor_omega_[1] = (-target_vx_ - target_vy_ + target_omega_) *
-                             MAXIMUM_ANGULAR_SPEED_OF_MOTOR_OUTPUT_SHAFT;
-    target_motor_omega_[2] = (target_vx_ - target_vy_ + target_omega_) *
-                             MAXIMUM_ANGULAR_SPEED_OF_MOTOR_OUTPUT_SHAFT;
-    target_motor_omega_[3] = (target_vx_ + target_vy_ + target_omega_) *
-                             MAXIMUM_ANGULAR_SPEED_OF_MOTOR_OUTPUT_SHAFT;
+    target_motor_omega_[0] = (-now_vx_ + now_vy_ + now_omega_) / r_wheel_;
+    target_motor_omega_[1] = (-now_vx_ - now_vy_ + now_omega_) / r_wheel_;
+    target_motor_omega_[2] = (now_vx_ - now_vy_ + now_omega_) / r_wheel_;
+    target_motor_omega_[3] = (now_vx_ + now_vy_ + now_omega_) / r_wheel_;
   }
 
   /**
@@ -153,22 +150,22 @@ class Mecanum {
    */
   void DynamicInverseSolution() {
     float force_x = pid_velocity_x_.Calculate(
-        target_vx_ * MAXIMUM_ANGULAR_SPEED_OF_MOTOR_OUTPUT_SHAFT * r_wheel_,
+        target_vx_,
         now_vx_, dt_);
     float force_y = pid_velocity_y_.Calculate(
-        target_vy_ * MAXIMUM_ANGULAR_SPEED_OF_MOTOR_OUTPUT_SHAFT * r_wheel_,
+        target_vy_,
         now_vy_, dt_);
     float torque = pid_omega_.Calculate(
-        target_omega_ * MAXIMUM_ANGULAR_SPEED_OF_MOTOR_OUTPUT_SHAFT * r_center_,
+        target_omega_,
         now_omega_, dt_);
 
-    target_motor_force_[0] = (-force_x / 4 * r_wheel_ + force_y / 4 * r_wheel_ +
+    target_motor_force_[0] = (-force_x / 4 / r_wheel_ + force_y / 4 / r_wheel_ +
                               torque * r_center_ / 4 / r_wheel_);
-    target_motor_force_[1] = (-force_x / 4 * r_wheel_ - force_y / 4 * r_wheel_ +
+    target_motor_force_[1] = (-force_x / 4 / r_wheel_ - force_y / 4 / r_wheel_ +
                               torque * r_center_ / 4 / r_wheel_);
-    target_motor_force_[2] = (force_x / 4 * r_wheel_ - force_y / 4 * r_wheel_ +
+    target_motor_force_[2] = (force_x / 4 / r_wheel_ - force_y / 4 / r_wheel_ +
                               torque * r_center_ / 4 / r_wheel_);
-    target_motor_force_[3] = (force_x / 4 * r_wheel_ + force_y / 4 * r_wheel_ +
+    target_motor_force_[3] = (force_x / 4 / r_wheel_ + force_y / 4 / r_wheel_ +
                               torque * r_center_ / 4 / r_wheel_);
   }
 
