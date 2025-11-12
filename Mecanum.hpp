@@ -28,10 +28,18 @@ template <typename MotorType>
 class Mecanum {
  public:
   Mecanum(LibXR::HardwareContainer &hw, LibXR::ApplicationManager &app,
-          CMD &cmd, Motor<MotorType> &motor_can1, Motor<MotorType> &motor_can2,
-          uint32_t task_stack_depth, float wheel_radius, float wheel_to_center,
-          float gravity_height, float wheel_resistance,
-          float error_compensation, LibXR::PID<float>::Param pid_velocity_x,
+          CMD &cmd, typename MotorType::RMMotor *motor_wheel_0,
+          typename MotorType::RMMotor *motor_wheel_1,
+          typename MotorType::RMMotor *motor_wheel_2,
+          typename MotorType::RMMotor *motor_wheel_3,
+          typename MotorType::RMMotor *motor_steer_0,
+          typename MotorType::RMMotor *motor_steer_1,
+          typename MotorType::RMMotor *motor_steer_2,
+          typename MotorType::RMMotor *motor_steer_3,
+          uint32_t task_stack_depth,
+          float wheel_radius, float wheel_to_center, float gravity_height,
+          float wheel_resistance, float error_compensation,
+          LibXR::PID<float>::Param pid_velocity_x,
           LibXR::PID<float>::Param pid_velocity_y,
           LibXR::PID<float>::Param pid_omega,
           LibXR::PID<float>::Param pid_wheel_omega_0,
@@ -47,8 +55,10 @@ class Mecanum {
         g_height_(gravity_height),
         wheel_resistance_(wheel_resistance),
         error_compensation_(error_compensation),
-        motor_can1_(&motor_can1),
-        motor_can2_(&motor_can2),
+        motor_wheel_0_(motor_wheel_0),
+        motor_wheel_1_(motor_wheel_1),
+        motor_wheel_2_(motor_wheel_2),
+        motor_wheel_3_(motor_wheel_3),
         cmd_(&cmd),
         pid_velocity_x_(pid_velocity_x),
         pid_velocity_y_(pid_velocity_y),
@@ -59,6 +69,10 @@ class Mecanum {
                          pid_steer_angle_2, pid_steer_angle_3} {
     UNUSED(hw);
     UNUSED(app);
+    UNUSED(motor_steer_0);
+    UNUSED(motor_steer_1);
+    UNUSED(motor_steer_2);
+    UNUSED(motor_steer_3);
 
     thread_.Create(this, ThreadFunction, "MecanumChassisThread",
                    task_stack_depth, LibXR::Thread::Priority::MEDIUM);
@@ -80,6 +94,7 @@ class Mecanum {
       mecanum->InverseKinematicsSolution();
       mecanum->DynamicInverseSolution();
       mecanum->mutex_.Unlock();
+
       mecanum->OutputToDynamics();
 
       auto last_time = LibXR::Timebase::GetMilliseconds();
@@ -92,7 +107,10 @@ class Mecanum {
     dt_ = (now - last_online_time_).ToSecondf();
     last_online_time_ = now;
 
-    motor_can1_->Update();
+    motor_wheel_0_->Update();
+    motor_wheel_1_->Update();
+    motor_wheel_2_->Update();
+    motor_wheel_3_->Update();
   }
 
   /**
@@ -121,14 +139,14 @@ class Mecanum {
    * @details 根据四个麦轮的角速度，解算出底盘当前的运动状态
    */
   void SelfResolution() {
-    now_vx_ = (-motor_can1_->GetOmega(0) - motor_can1_->GetOmega(1) +
-               motor_can1_->GetOmega(2) + motor_can1_->GetOmega(3)) *
+    now_vx_ = (-motor_wheel_0_->GetOmega() - motor_wheel_1_->GetOmega() +
+               motor_wheel_2_->GetOmega() + motor_wheel_3_->GetOmega()) *
               r_wheel_ / 4.0f;
-    now_vy_ = (motor_can1_->GetOmega(0) - motor_can1_->GetOmega(1) -
-               motor_can1_->GetOmega(2) + motor_can1_->GetOmega(3)) *
+    now_vy_ = (motor_wheel_0_->GetOmega() - motor_wheel_1_->GetOmega() -
+               motor_wheel_2_->GetOmega() + motor_wheel_3_->GetOmega()) *
               r_wheel_ / 4.0f;
-    now_omega_ = (motor_can1_->GetOmega(0) + motor_can1_->GetOmega(1) +
-                  motor_can1_->GetOmega(2) + motor_can1_->GetOmega(3)) *
+    now_omega_ = (motor_wheel_0_->GetOmega() + motor_wheel_1_->GetOmega() +
+                  motor_wheel_2_->GetOmega() + motor_wheel_3_->GetOmega()) *
                  r_wheel_ / (4.0f * r_center_);
   }
 
@@ -177,23 +195,23 @@ class Mecanum {
 
   void OutputToDynamics() {
     target_motor_current_[0] = pid_wheel_omega_[0].Calculate(
-        target_motor_omega_[0], motor_can1_->GetOmega(0), dt_);
+        target_motor_omega_[0], motor_wheel_0_->GetOmega(), dt_);
     target_motor_current_[1] = pid_wheel_omega_[1].Calculate(
-        target_motor_omega_[1], motor_can1_->GetOmega(1), dt_);
+        target_motor_omega_[1], motor_wheel_1_->GetOmega(), dt_);
     target_motor_current_[2] = pid_wheel_omega_[2].Calculate(
-        target_motor_omega_[2], motor_can1_->GetOmega(2), dt_);
+        target_motor_omega_[2], motor_wheel_2_->GetOmega(), dt_);
     target_motor_current_[3] = pid_wheel_omega_[3].Calculate(
-        target_motor_omega_[3], motor_can1_->GetOmega(3), dt_);
+        target_motor_omega_[3], motor_wheel_3_->GetOmega(), dt_);
 
     for (int i = 0; i < 4; i++) {
       output_[i] = (target_motor_current_[i] + target_motor_force_[i]) *
                    ANGULAR_VELOCITY_COEFFICIENT;
     }
 
-    motor_can1_->SetCurrent(0, output_[0]);
-    motor_can1_->SetCurrent(1, output_[1]);
-    motor_can1_->SetCurrent(2, output_[2]);
-    motor_can1_->SetCurrent(3, output_[3]);
+    motor_wheel_0_->CurrentControl(300);
+    motor_wheel_1_->CurrentControl(300);
+    motor_wheel_2_->CurrentControl(300);
+    motor_wheel_3_->CurrentControl(300);
   }
 
  private:
@@ -226,8 +244,10 @@ class Mecanum {
   float dt_ = 0;
   LibXR::MicrosecondTimestamp last_online_time_ = 0;
 
-  Motor<MotorType> *motor_can1_;
-  Motor<MotorType> *motor_can2_;
+  typename MotorType::RMMotor *motor_wheel_0_;
+  typename MotorType::RMMotor *motor_wheel_1_;
+  typename MotorType::RMMotor *motor_wheel_2_;
+  typename MotorType::RMMotor *motor_wheel_3_;
   CMD *cmd_;
 
   LibXR::PID<float> pid_velocity_x_;
