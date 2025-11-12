@@ -208,10 +208,10 @@ class Mecanum {
                    ANGULAR_VELOCITY_COEFFICIENT;
     }
 
-    motor_wheel_0_->CurrentControl(300);
-    motor_wheel_1_->CurrentControl(300);
-    motor_wheel_2_->CurrentControl(300);
-    motor_wheel_3_->CurrentControl(300);
+    motor_wheel_0_->CurrentControl(output_[0]);
+    motor_wheel_1_->CurrentControl(output_[1]);
+    motor_wheel_2_->CurrentControl(output_[2]);
+    motor_wheel_3_->CurrentControl(output_[3]);
   }
 
  private:
