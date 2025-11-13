@@ -11,8 +11,8 @@ constructor_args:
   - motor_wheel_3: '@motor_can1.GetMotor(3)'
   - motor_steer_0: '@motor_can1.GetMotor(4)'
   - motor_steer_1: '@motor_can1.GetMotor(5)'
-  - motor_wheel_2: '@motor_can1.GetMotor(6)'
-  - motor_wheel_3: '@motor_can1.GetMotor(7)'
+  - motor_steer_2: '@motor_can1.GetMotor(6)'
+  - motor_steer_3: '@motor_can1.GetMotor(7)'
   - task_stack_depth: 2048
   - wheel_radius: 0.0
   - wheel_to_center: 0.0
