@@ -29,6 +29,37 @@ class Chassis;
 template <typename MotorType>
 class Omni {
  public:
+  /**
+   * @brief 构造函数，初始化全向轮底盘控制对象
+   * @param hw 硬件容器引用
+   * @param app 应用管理器引用
+   * @param cmd 控制命令引用
+   * @param motor_wheel_0 第0个驱动轮电机指针
+   * @param motor_wheel_1 第1个驱动轮电机指针
+   * @param motor_wheel_2 第2个驱动轮电机指针
+   * @param motor_wheel_3 第3个驱动轮电机指针
+   * @param motor_steer_0 第0个舵向电机指针（本底盘未使用）
+   * @param motor_steer_1 第1个舵向电机指针（本底盘未使用）
+   * @param motor_steer_2 第2个舵向电机指针（本底盘未使用）
+   * @param motor_steer_3 第3个舵向电机指针（本底盘未使用）
+   * @param task_stack_depth 控制线程栈深度
+   * @param wheel_radius 轮子半径
+   * @param wheel_to_center 轮子到底盘中心距离
+   * @param gravity_height 重心高度
+   * @param wheel_resistance 轮子阻力
+   * @param error_compensation 误差补偿系数
+   * @param pid_velocity_x X方向速度PID参数
+   * @param pid_velocity_y Y方向速度PID参数
+   * @param pid_omega 角速度PID参数
+   * @param pid_wheel_omega_0 轮子0角速度PID参数
+   * @param pid_wheel_omega_1 轮子1角速度PID参数
+   * @param pid_wheel_omega_2 轮子2角速度PID参数
+   * @param pid_wheel_omega_3 轮子3角速度PID参数
+   * @param pid_steer_angle_0 舵机0角度PID参数（本底盘未使用）
+   * @param pid_steer_angle_1 舵机1角度PID参数（本底盘未使用）
+   * @param pid_steer_angle_2 舵机2角度PID参数（本底盘未使用）
+   * @param pid_steer_angle_3 舵机3角度PID参数（本底盘未使用）
+   */
   Omni(LibXR::HardwareContainer &hw, LibXR::ApplicationManager &app,
           CMD &cmd, typename MotorType::RMMotor *motor_wheel_0,
           typename MotorType::RMMotor *motor_wheel_1,
@@ -78,6 +109,11 @@ class Omni {
                    LibXR::Thread::Priority::MEDIUM);
   }
 
+  /**
+   * @brief 全向轮底盘控制线程函数
+   * @param omni Omni对象指针
+   * @details 控制线程主循环，负责接收控制指令、执行运动学解算和动力学控制输出
+   */
   static void ThreadFunction(Omni *omni) {
     LibXR::Topic::ASyncSubscriber<CMD::ChassisCMD> cmd_suber("chassis_cmd");
 
@@ -102,6 +138,10 @@ class Omni {
     }
   }
 
+  /**
+   * @brief 更新电机状态
+   * @details 获取当前时间戳并更新所有驱动轮电机的状态
+   */
   void Update() {
     auto now = LibXR::Timebase::GetMicroseconds();
     dt_ = (now - last_online_time_).ToSecondf();
@@ -125,7 +165,7 @@ class Omni {
 
   /**
    * @brief 更新底盘控制指令状态
-   * @details 从CDM获取底盘控制指令
+   * @details 从CMD获取底盘控制指令，并转换为目标速度
    */
   void UpdateSetpointFromCMD() {
     const float SQRT2 = 1.41421356237f;
@@ -138,8 +178,8 @@ class Omni {
   }
 
   /**
-   * @brief 麦轮底盘正运动学解算
-   * @details 根据四个麦轮的角速度，解算出底盘当前的运动状态
+   * @brief 全向轮底盘正运动学解算
+   * @details 根据四个全向轮的角速度，解算出底盘当前的运动状态
    */
   void SelfResolution() {
     const float SQRT2 = 1.41421356237f;
@@ -155,8 +195,8 @@ class Omni {
   }
 
   /**
-   * @brief 麦轮底盘逆运动学解算
-   * @details 根据目标底盘速度（vx, vy, ω），计算四个麦轮的目标角速度
+   * @brief 全向轮底盘逆运动学解算
+   * @details 根据目标底盘速度（vx, vy, ω），计算四个全向轮的目标角速度
    */
   void InverseKinematicsSolution() {
     const float SQRT1 = 0.70710678118f;
@@ -176,9 +216,8 @@ class Omni {
   }
 
   /**
-   * @brief 麦轮底盘逆动力学解算
-   * @details
-   * 通过运动学正解算出底盘现在的运动状态，并与目标状态进行PID控制，获得目标前馈力矩
+   * @brief 全向轮底盘逆动力学解算
+   * @details 通过运动学正解算出底盘现在的运动状态，并与目标状态进行PID控制，获得目标前馈力矩
    */
   void DynamicInverseSolution() {
     const float SQRT2 = 1.41421356237f;
@@ -202,9 +241,8 @@ class Omni {
   }
 
   /**
-   * @brief 麦轮底盘动力学输出
-   * @details
-   * 限幅并输出四个麦轮的电流控制指令
+   * @brief 全向轮底盘动力学输出
+   * @details 限幅并输出四个全向轮的电流控制指令
    */
   void OutputToDynamics() {
     target_motor_current_[0] = pid_wheel_omega_[0].Calculate(
