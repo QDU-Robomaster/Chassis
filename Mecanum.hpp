@@ -155,10 +155,10 @@ class Mecanum {
    * @details 根据目标底盘速度（vx, vy, ω），计算四个麦轮的目标角速度
    */
   void InverseKinematicsSolution() {
-    target_motor_omega_[0] = (-now_vx_ + now_vy_ + now_omega_) / r_wheel_;
-    target_motor_omega_[1] = (-now_vx_ - now_vy_ + now_omega_) / r_wheel_;
-    target_motor_omega_[2] = (now_vx_ - now_vy_ + now_omega_) / r_wheel_;
-    target_motor_omega_[3] = (now_vx_ + now_vy_ + now_omega_) / r_wheel_;
+    target_motor_omega_[0] = (-now_vx_ + now_vy_ + now_omega_*r_center_) / r_wheel_;
+    target_motor_omega_[1] = (-now_vx_ - now_vy_ + now_omega_*r_center_) / r_wheel_;
+    target_motor_omega_[2] = (now_vx_ - now_vy_ + now_omega_*r_center_) / r_wheel_;
+    target_motor_omega_[3] = (now_vx_ + now_vy_ + now_omega_*r_center_) / r_wheel_;
   }
 
   /**

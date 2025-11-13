@@ -18,34 +18,48 @@ depends: []
 #include "libxr_time.hpp"
 #include "pid.hpp"
 
+#define MOTOR_MAX_ROTATIONAL_SPEED 9600 /* 电机最大转速 */
+#define MAXIMUM_ANGULAR_SPEED_OF_MOTOR_OUTPUT_SHAFT \
+  52                                     /* 电机输出轴最大角速度 */
+#define ANGULAR_VELOCITY_COEFFICIENT 315 /* 角速度系数 */
+
 template <typename ChassisType, typename MotorType>
 class Chassis;
 
 template <typename MotorType>
 class Omni {
  public:
-  Omni(LibXR::HardwareContainer &hw, LibXR::ApplicationManager &app, CMD &cmd,
-       Motor<MotorType> &motor_can1, Motor<MotorType> &motor_can2,
-       uint32_t task_stack_depth, float wheel_radius, float wheel_to_center,
-       float gravity_height, float wheel_resistance, float error_compensation,
-       LibXR::PID<float>::Param pid_velocity_x,
-       LibXR::PID<float>::Param pid_velocity_y,
-       LibXR::PID<float>::Param pid_omega,
-       LibXR::PID<float>::Param pid_wheel_omega_0,
-       LibXR::PID<float>::Param pid_wheel_omega_1,
-       LibXR::PID<float>::Param pid_wheel_omega_2,
-       LibXR::PID<float>::Param pid_wheel_omega_3,
-       LibXR::PID<float>::Param pid_steer_angle_0,
-       LibXR::PID<float>::Param pid_steer_angle_1,
-       LibXR::PID<float>::Param pid_steer_angle_2,
-       LibXR::PID<float>::Param pid_steer_angle_3)
+  Omni(LibXR::HardwareContainer &hw, LibXR::ApplicationManager &app,
+          CMD &cmd, typename MotorType::RMMotor *motor_wheel_0,
+          typename MotorType::RMMotor *motor_wheel_1,
+          typename MotorType::RMMotor *motor_wheel_2,
+          typename MotorType::RMMotor *motor_wheel_3,
+          typename MotorType::RMMotor *motor_steer_0,
+          typename MotorType::RMMotor *motor_steer_1,
+          typename MotorType::RMMotor *motor_steer_2,
+          typename MotorType::RMMotor *motor_steer_3, uint32_t task_stack_depth,
+          float wheel_radius, float wheel_to_center, float gravity_height,
+          float wheel_resistance, float error_compensation,
+          LibXR::PID<float>::Param pid_velocity_x,
+          LibXR::PID<float>::Param pid_velocity_y,
+          LibXR::PID<float>::Param pid_omega,
+          LibXR::PID<float>::Param pid_wheel_omega_0,
+          LibXR::PID<float>::Param pid_wheel_omega_1,
+          LibXR::PID<float>::Param pid_wheel_omega_2,
+          LibXR::PID<float>::Param pid_wheel_omega_3,
+          LibXR::PID<float>::Param pid_steer_angle_0,
+          LibXR::PID<float>::Param pid_steer_angle_1,
+          LibXR::PID<float>::Param pid_steer_angle_2,
+          LibXR::PID<float>::Param pid_steer_angle_3)
       : r_wheel_(wheel_radius),
         r_center_(wheel_to_center),
         g_height_(gravity_height),
         wheel_resistance_(wheel_resistance),
         error_compensation_(error_compensation),
-        motor_can1_(&motor_can1),
-        motor_can2_(&motor_can2),
+        motor_wheel_0_(motor_wheel_0),
+        motor_wheel_1_(motor_wheel_1),
+        motor_wheel_2_(motor_wheel_2),
+        motor_wheel_3_(motor_wheel_3),
         cmd_(&cmd),
         pid_velocity_x_(pid_velocity_x),
         pid_velocity_y_(pid_velocity_y),
@@ -56,7 +70,10 @@ class Omni {
                          pid_steer_angle_2, pid_steer_angle_3} {
     UNUSED(hw);
     UNUSED(app);
-
+    UNUSED(motor_steer_0);
+    UNUSED(motor_steer_1);
+    UNUSED(motor_steer_2);
+    UNUSED(motor_steer_3);
     thread_.Create(this, ThreadFunction, "OmniChassisThread", task_stack_depth,
                    LibXR::Thread::Priority::MEDIUM);
   }
@@ -85,7 +102,16 @@ class Omni {
     }
   }
 
-  void Update() { motor_can1_->Update(); }
+  void Update() {
+    auto now = LibXR::Timebase::GetMicroseconds();
+    dt_ = (now - last_online_time_).ToSecondf();
+    last_online_time_ = now;
+
+    motor_wheel_0_->Update();
+    motor_wheel_1_->Update();
+    motor_wheel_2_->Update();
+    motor_wheel_3_->Update();
+  }
 
   /**
    * @brief 设置底盘模式 (由 Chassis 外壳调用)
@@ -102,9 +128,13 @@ class Omni {
    * @details 从CDM获取底盘控制指令
    */
   void UpdateSetpointFromCMD() {
-    target_vx_ = cmd_data_.x;
-    target_vy_ = cmd_data_.y;
-    target_omega_ = cmd_data_.z;
+    const float SQRT2 = 1.41421356237f;
+    target_vx_ =
+        cmd_data_.y * MAXIMUM_ANGULAR_SPEED_OF_MOTOR_OUTPUT_SHAFT * r_wheel_*SQRT2;
+    target_vy_ =
+        cmd_data_.x * MAXIMUM_ANGULAR_SPEED_OF_MOTOR_OUTPUT_SHAFT * r_wheel_*SQRT2;
+    target_omega_ =
+        -cmd_data_.z * MAXIMUM_ANGULAR_SPEED_OF_MOTOR_OUTPUT_SHAFT * r_center_*SQRT2;
   }
 
   /**
@@ -113,18 +143,15 @@ class Omni {
    */
   void SelfResolution() {
     const float SQRT2 = 1.41421356237f;
-    now_vx_ =
-        (-motor_can1_->GetRPM(0) * M_2PI - motor_can1_->GetRPM(1) * M_2PI +
-         motor_can1_->GetRPM(2) * M_2PI + motor_can1_->GetRPM(3) * M_2PI) *
-        SQRT2 * r_wheel_ / 4.0f;
-    now_vy_ =
-        (motor_can1_->GetRPM(0) * M_2PI - motor_can1_->GetRPM(1) * M_2PI -
-         motor_can1_->GetRPM(2) * M_2PI + motor_can1_->GetRPM(3) * M_2PI) *
-        SQRT2 * r_wheel_ / 4.0f;
-    now_omega_ =
-        (motor_can1_->GetRPM(0) * M_2PI + motor_can1_->GetRPM(1) * M_2PI +
-         motor_can1_->GetRPM(2) * M_2PI + motor_can1_->GetRPM(3) * M_2PI) *
-        r_wheel_ / (4.0f * r_center_);
+    now_vx_ = (-motor_wheel_0_->GetOmega() - motor_wheel_1_->GetOmega() +
+               motor_wheel_2_->GetOmega() + motor_wheel_3_->GetOmega()) *SQRT2*
+              r_wheel_ / 4.0f;
+    now_vy_ = (motor_wheel_0_->GetOmega() - motor_wheel_1_->GetOmega() -
+               motor_wheel_2_->GetOmega() + motor_wheel_3_->GetOmega()) *SQRT2*
+              r_wheel_ / 4.0f;
+    now_omega_ = (motor_wheel_0_->GetOmega() + motor_wheel_1_->GetOmega() +
+                  motor_wheel_2_->GetOmega() + motor_wheel_3_->GetOmega()) *SQRT2*
+                 r_wheel_ / (4.0f * r_center_);
   }
 
   /**
@@ -135,16 +162,16 @@ class Omni {
     const float SQRT1 = 0.70710678118f;
 
     target_motor_omega_[0] =
-        (-SQRT1 * target_vx_ + SQRT1 * target_vy_ + target_omega_ * r_center_) /
+        (-SQRT1 * now_vx_ + SQRT1 * now_vx_ + now_omega_ * r_center_) /
         r_wheel_;
     target_motor_omega_[1] =
-        (-SQRT1 * target_vx_ - SQRT1 * target_vy_ + target_omega_ * r_center_) /
+        (-SQRT1 * target_vx_ - SQRT1 * target_vy_ + now_omega_ * r_center_) /
         r_wheel_;
     target_motor_omega_[2] =
-        (SQRT1 * target_vx_ - SQRT1 * target_vy_ + target_omega_ * r_center_) /
+        (SQRT1 * target_vx_ - SQRT1 * target_vy_ + now_omega_ * r_center_) /
         r_wheel_;
     target_motor_omega_[3] =
-        (SQRT1 * target_vx_ + SQRT1 * target_vy_ + target_omega_ * r_center_) /
+        (SQRT1 * target_vx_ + SQRT1 * target_vy_ + now_omega_ * r_center_) /
         r_wheel_;
   }
 
@@ -161,16 +188,16 @@ class Omni {
     float torque = pid_omega_.Calculate(target_omega_, now_omega_, dt_);
 
     target_motor_force_[0] =
-        (-SQRT2 * force_x / 4 * r_wheel_ + SQRT2 * force_y / 4 * r_wheel_ +
+        (-SQRT2 * force_x / 4 / r_wheel_ + SQRT2 * force_y / 4 / r_wheel_ +
          torque * r_center_ / 4 / r_wheel_);
     target_motor_force_[1] =
-        (-SQRT2 * force_x / 4 * r_wheel_ - SQRT2 * force_y / 4 * r_wheel_ +
+        (-SQRT2 * force_x / 4 / r_wheel_ - SQRT2 * force_y / 4 / r_wheel_ +
          torque * r_center_ / 4 / r_wheel_);
     target_motor_force_[2] =
-        (SQRT2 * force_x / 4 * r_wheel_ - SQRT2 * force_y / 4 * r_wheel_ +
+        (SQRT2 * force_x / 4 / r_wheel_ - SQRT2 * force_y / 4 / r_wheel_ +
          torque * r_center_ / 4 / r_wheel_);
     target_motor_force_[3] =
-        (SQRT2 * force_x / 4 * r_wheel_ + SQRT2 * force_y / 4 * r_wheel_ +
+        (SQRT2 * force_x / 4 / r_wheel_ + SQRT2 * force_y / 4 / r_wheel_ +
          torque * r_center_ / 4 / r_wheel_);
   }
 
@@ -180,23 +207,24 @@ class Omni {
    * 限幅并输出四个麦轮的电流控制指令
    */
   void OutputToDynamics() {
-    for (int i = 0; i < 4; i++) {
-      target_motor_current_[i] =
-          target_motor_force_[i] + target_motor_force_[i];
-    }
-    output_[0] = pid_wheel_omega_[0].Calculate(
-        target_motor_current_[0], motor_can1_->GetRPM(0) * M_2PI, dt_);
-    output_[1] = pid_wheel_omega_[1].Calculate(
-        target_motor_current_[1], motor_can1_->GetRPM(1) * M_2PI, dt_);
-    output_[2] = pid_wheel_omega_[2].Calculate(
-        target_motor_current_[2], motor_can1_->GetRPM(2) * M_2PI, dt_);
-    output_[3] = pid_wheel_omega_[3].Calculate(
-        target_motor_current_[3], motor_can1_->GetRPM(3) * M_2PI, dt_);
+    target_motor_current_[0] = pid_wheel_omega_[0].Calculate(
+        target_motor_omega_[0], motor_wheel_0_->GetOmega(), dt_);
+    target_motor_current_[1] = pid_wheel_omega_[1].Calculate(
+        target_motor_omega_[1], motor_wheel_1_->GetOmega(), dt_);
+    target_motor_current_[2] = pid_wheel_omega_[2].Calculate(
+        target_motor_omega_[2], motor_wheel_2_->GetOmega(), dt_);
+    target_motor_current_[3] = pid_wheel_omega_[3].Calculate(
+        target_motor_omega_[3], motor_wheel_3_->GetOmega(), dt_);
 
     for (int i = 0; i < 4; i++) {
-      output_[i] = std::clamp(output_[i], -max_current_, max_current_);
-      motor_can1_->SetCurrent(i, output_[i]);
+      output_[i] = (target_motor_current_[i] + target_motor_force_[i]) *
+                   ANGULAR_VELOCITY_COEFFICIENT;
     }
+
+    motor_wheel_0_->CurrentControl(output_[0]);
+    motor_wheel_1_->CurrentControl(output_[1]);
+    motor_wheel_2_->CurrentControl(output_[2]);
+    motor_wheel_3_->CurrentControl(output_[3]);
   }
 
  private:
@@ -229,8 +257,10 @@ class Omni {
   float dt_ = 0;
   LibXR::MicrosecondTimestamp last_online_time_ = 0;
 
-  Motor<MotorType> *motor_can1_;
-  Motor<MotorType> *motor_can2_;
+  typename MotorType::RMMotor *motor_wheel_0_;
+  typename MotorType::RMMotor *motor_wheel_1_;
+  typename MotorType::RMMotor *motor_wheel_2_;
+  typename MotorType::RMMotor *motor_wheel_3_;
   CMD *cmd_;
 
   LibXR::PID<float> pid_velocity_x_;
