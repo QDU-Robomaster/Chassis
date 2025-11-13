@@ -17,6 +17,7 @@ constructor_args:
   - wheel_radius: 0.0
   - wheel_to_center: 0.0
   - gravity_height: 0.0
+  - reductionratio: 0.0
   - wheel_resistance: 0.0
   - error_compensation: 0.0
   - pid_velocity_x_:
@@ -153,8 +154,8 @@ class Chassis : public LibXR::Application {
           typename MotorType::RMMotor *motor_steer_2,
           typename MotorType::RMMotor *motor_steer_3, uint32_t task_stack_depth,
           float wheel_radius = 0.0f, float wheel_to_center = 0.0f,
-          float gravity_height = 0.0f, float wheel_resistance = 0.0f,
-          float error_compensation = 0.0f,
+          float gravity_height = 0.0f, float reductionratio = 0.0f,
+          float wheel_resistance = 0.0f, float error_compensation = 0.0f,
           LibXR::PID<float>::Param pid_velocity_x_ = {.k = .0f,
                                                       .p = .0f,
                                                       .i = .0f,
@@ -235,11 +236,11 @@ class Chassis : public LibXR::Application {
       : chassis_(hw, app, cmd, motor_wheel_0, motor_wheel_1, motor_wheel_2,
                  motor_wheel_3, motor_steer_0, motor_steer_1, motor_steer_2,
                  motor_steer_3, task_stack_depth, wheel_radius, wheel_to_center,
-                 gravity_height, wheel_resistance, error_compensation,
-                 pid_velocity_x_, pid_velocity_y_, pid_omega_,
-                 pid_wheel_angle_0_, pid_wheel_angle_1_, pid_wheel_angle_2_,
-                 pid_wheel_angle_3_, pid_steer_angle_0_, pid_steer_angle_1_,
-                 pid_steer_angle_2_, pid_steer_angle_3_) {
+                 gravity_height, reductionratio, wheel_resistance,
+                 error_compensation, pid_velocity_x_, pid_velocity_y_,
+                 pid_omega_, pid_wheel_angle_0_, pid_wheel_angle_1_,
+                 pid_wheel_angle_2_, pid_wheel_angle_3_, pid_steer_angle_0_,
+                 pid_steer_angle_1_, pid_steer_angle_2_, pid_steer_angle_3_) {
     auto cb = [](bool in_isr, void *arg, uint32_t event_id) {
       UNUSED(in_isr);
       static_cast<Chassis *>(arg)->EventHandler(event_id);

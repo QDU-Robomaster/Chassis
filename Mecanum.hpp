@@ -66,10 +66,9 @@ class Mecanum {
           typename MotorType::RMMotor *motor_steer_0,
           typename MotorType::RMMotor *motor_steer_1,
           typename MotorType::RMMotor *motor_steer_2,
-          typename MotorType::RMMotor *motor_steer_3,
-          uint32_t task_stack_depth,
+          typename MotorType::RMMotor *motor_steer_3, uint32_t task_stack_depth,
           float wheel_radius, float wheel_to_center, float gravity_height,
-          float wheel_resistance, float error_compensation,
+          float wheel_resistance, float reductionratio,float error_compensation,
           LibXR::PID<float>::Param pid_velocity_x,
           LibXR::PID<float>::Param pid_velocity_y,
           LibXR::PID<float>::Param pid_omega,
@@ -84,6 +83,7 @@ class Mecanum {
       : r_wheel_(wheel_radius),
         r_center_(wheel_to_center),
         g_height_(gravity_height),
+        reductionratio_(reductionratio),
         wheel_resistance_(wheel_resistance),
         error_compensation_(error_compensation),
         motor_wheel_0_(motor_wheel_0),
@@ -258,7 +258,9 @@ class Mecanum {
 
   float g_height_ = 0.0f;
 
-  float target_motor_omega_[4]{0.0f, 0.0f, 0.0f, 0.0f};
+  float reductionratio_ = 0.0f;
+
+      float target_motor_omega_[4]{0.0f, 0.0f, 0.0f, 0.0f};
   float target_motor_force_[4]{0.0f, 0.0f, 0.0f, 0.0f};
   float target_motor_current_[4]{0.0f, 0.0f, 0.0f, 0.0f};
   float output_[4]{0.0f, 0.0f, 0.0f, 0.0f};

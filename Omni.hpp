@@ -18,10 +18,8 @@ depends: []
 #include "libxr_time.hpp"
 #include "pid.hpp"
 
-#define MOTOR_MAX_ROTATIONAL_SPEED 9600 /* 电机最大转速 */
 #define MAXIMUM_ANGULAR_SPEED_OF_MOTOR_OUTPUT_SHAFT \
-  52                                     /* 电机输出轴最大角速度 */
-#define ANGULAR_VELOCITY_COEFFICIENT 315 /* 角速度系数 */
+  52 /* 电机输出轴最大角速度 */
 
 template <typename ChassisType, typename MotorType>
 class Chassis;
@@ -60,31 +58,32 @@ class Omni {
    * @param pid_steer_angle_2 舵机2角度PID参数（本底盘未使用）
    * @param pid_steer_angle_3 舵机3角度PID参数（本底盘未使用）
    */
-  Omni(LibXR::HardwareContainer &hw, LibXR::ApplicationManager &app,
-          CMD &cmd, typename MotorType::RMMotor *motor_wheel_0,
-          typename MotorType::RMMotor *motor_wheel_1,
-          typename MotorType::RMMotor *motor_wheel_2,
-          typename MotorType::RMMotor *motor_wheel_3,
-          typename MotorType::RMMotor *motor_steer_0,
-          typename MotorType::RMMotor *motor_steer_1,
-          typename MotorType::RMMotor *motor_steer_2,
-          typename MotorType::RMMotor *motor_steer_3, uint32_t task_stack_depth,
-          float wheel_radius, float wheel_to_center, float gravity_height,
-          float wheel_resistance, float error_compensation,
-          LibXR::PID<float>::Param pid_velocity_x,
-          LibXR::PID<float>::Param pid_velocity_y,
-          LibXR::PID<float>::Param pid_omega,
-          LibXR::PID<float>::Param pid_wheel_omega_0,
-          LibXR::PID<float>::Param pid_wheel_omega_1,
-          LibXR::PID<float>::Param pid_wheel_omega_2,
-          LibXR::PID<float>::Param pid_wheel_omega_3,
-          LibXR::PID<float>::Param pid_steer_angle_0,
-          LibXR::PID<float>::Param pid_steer_angle_1,
-          LibXR::PID<float>::Param pid_steer_angle_2,
-          LibXR::PID<float>::Param pid_steer_angle_3)
+  Omni(LibXR::HardwareContainer &hw, LibXR::ApplicationManager &app, CMD &cmd,
+       typename MotorType::RMMotor *motor_wheel_0,
+       typename MotorType::RMMotor *motor_wheel_1,
+       typename MotorType::RMMotor *motor_wheel_2,
+       typename MotorType::RMMotor *motor_wheel_3,
+       typename MotorType::RMMotor *motor_steer_0,
+       typename MotorType::RMMotor *motor_steer_1,
+       typename MotorType::RMMotor *motor_steer_2,
+       typename MotorType::RMMotor *motor_steer_3, uint32_t task_stack_depth,
+       float wheel_radius, float wheel_to_center, float gravity_height,
+       float reductionratio, float wheel_resistance, float error_compensation,
+       LibXR::PID<float>::Param pid_velocity_x,
+       LibXR::PID<float>::Param pid_velocity_y,
+       LibXR::PID<float>::Param pid_omega,
+       LibXR::PID<float>::Param pid_wheel_omega_0,
+       LibXR::PID<float>::Param pid_wheel_omega_1,
+       LibXR::PID<float>::Param pid_wheel_omega_2,
+       LibXR::PID<float>::Param pid_wheel_omega_3,
+       LibXR::PID<float>::Param pid_steer_angle_0,
+       LibXR::PID<float>::Param pid_steer_angle_1,
+       LibXR::PID<float>::Param pid_steer_angle_2,
+       LibXR::PID<float>::Param pid_steer_angle_3)
       : r_wheel_(wheel_radius),
         r_center_(wheel_to_center),
         g_height_(gravity_height),
+        reductionratio_(reductionratio),
         wheel_resistance_(wheel_resistance),
         error_compensation_(error_compensation),
         motor_wheel_0_(motor_wheel_0),
@@ -169,12 +168,12 @@ class Omni {
    */
   void UpdateSetpointFromCMD() {
     const float SQRT2 = 1.41421356237f;
-    target_vx_ =
-        cmd_data_.y * MAXIMUM_ANGULAR_SPEED_OF_MOTOR_OUTPUT_SHAFT * r_wheel_*SQRT2;
-    target_vy_ =
-        cmd_data_.x * MAXIMUM_ANGULAR_SPEED_OF_MOTOR_OUTPUT_SHAFT * r_wheel_*SQRT2;
-    target_omega_ =
-        -cmd_data_.z * MAXIMUM_ANGULAR_SPEED_OF_MOTOR_OUTPUT_SHAFT * r_center_*SQRT2;
+    target_vx_ = cmd_data_.y * MAXIMUM_ANGULAR_SPEED_OF_MOTOR_OUTPUT_SHAFT *
+                 r_wheel_ * SQRT2;
+    target_vy_ = cmd_data_.x * MAXIMUM_ANGULAR_SPEED_OF_MOTOR_OUTPUT_SHAFT *
+                 r_wheel_ * SQRT2;
+    target_omega_ = -cmd_data_.z * MAXIMUM_ANGULAR_SPEED_OF_MOTOR_OUTPUT_SHAFT *
+                    r_center_ * SQRT2;
   }
 
   /**
@@ -184,14 +183,14 @@ class Omni {
   void SelfResolution() {
     const float SQRT2 = 1.41421356237f;
     now_vx_ = (-motor_wheel_0_->GetOmega() - motor_wheel_1_->GetOmega() +
-               motor_wheel_2_->GetOmega() + motor_wheel_3_->GetOmega()) *SQRT2*
-              r_wheel_ / 4.0f;
+               motor_wheel_2_->GetOmega() + motor_wheel_3_->GetOmega()) *
+              SQRT2 * r_wheel_ / 4.0f;
     now_vy_ = (motor_wheel_0_->GetOmega() - motor_wheel_1_->GetOmega() -
-               motor_wheel_2_->GetOmega() + motor_wheel_3_->GetOmega()) *SQRT2*
-              r_wheel_ / 4.0f;
+               motor_wheel_2_->GetOmega() + motor_wheel_3_->GetOmega()) *
+              SQRT2 * r_wheel_ / 4.0f;
     now_omega_ = (motor_wheel_0_->GetOmega() + motor_wheel_1_->GetOmega() +
-                  motor_wheel_2_->GetOmega() + motor_wheel_3_->GetOmega()) *SQRT2*
-                 r_wheel_ / (4.0f * r_center_);
+                  motor_wheel_2_->GetOmega() + motor_wheel_3_->GetOmega()) *
+                 SQRT2 * r_wheel_ / (4.0f * r_center_);
   }
 
   /**
@@ -217,7 +216,8 @@ class Omni {
 
   /**
    * @brief 全向轮底盘逆动力学解算
-   * @details 通过运动学正解算出底盘现在的运动状态，并与目标状态进行PID控制，获得目标前馈力矩
+   * @details
+   * 通过运动学正解算出底盘现在的运动状态，并与目标状态进行PID控制，获得目标前馈力矩
    */
   void DynamicInverseSolution() {
     const float SQRT2 = 1.41421356237f;
@@ -255,14 +255,13 @@ class Omni {
         target_motor_omega_[3], motor_wheel_3_->GetOmega(), dt_);
 
     for (int i = 0; i < 4; i++) {
-      output_[i] = (target_motor_current_[i] + target_motor_force_[i]) *
-                   ANGULAR_VELOCITY_COEFFICIENT;
+      output_[i] = (target_motor_current_[i] + target_motor_force_[i]*r_wheel_);
     }
 
-    motor_wheel_0_->CurrentControl(output_[0]);
-    motor_wheel_1_->CurrentControl(output_[1]);
-    motor_wheel_2_->CurrentControl(output_[2]);
-    motor_wheel_3_->CurrentControl(output_[3]);
+    motor_wheel_0_->TorqueControl(output_[0], reductionratio_);
+    motor_wheel_1_->TorqueControl(output_[1], reductionratio_);
+    motor_wheel_2_->TorqueControl(output_[2], reductionratio_);
+    motor_wheel_3_->TorqueControl(output_[3], reductionratio_);
   }
 
  private:
@@ -271,6 +270,8 @@ class Omni {
   float r_center_ = 0.0f;
 
   float g_height_ = 0.0f;
+
+  float reductionratio_ = 0.0f;
 
   float target_motor_omega_[4]{0.0f, 0.0f, 0.0f, 0.0f};
   float target_motor_force_[4]{0.0f, 0.0f, 0.0f, 0.0f};
