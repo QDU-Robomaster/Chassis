@@ -216,6 +216,7 @@ class Mecanum {
    * 通过运动学正解算出底盘现在的运动状态，并与目标状态进行PID控制，获得目标前馈力矩
    */
   void DynamicInverseSolution() {
+    //TODO:添加功率控制和打滑检测
     float force_x = pid_velocity_x_.Calculate(target_vx_, now_vx_, dt_);
     float force_y = pid_velocity_y_.Calculate(target_vy_, now_vy_, dt_);
     float torque = pid_omega_.Calculate(target_omega_, now_omega_, dt_);
@@ -243,6 +244,7 @@ class Mecanum {
    * @details 限幅并输出四个全向轮的电流控制指令
    */
   void OutputToDynamics() {
+    //TODO:判断电机返回值是否正常
     target_motor_current_[0] = pid_wheel_omega_[0].Calculate(
         target_motor_omega_[0], motor_wheel_0_->GetOmega(), dt_);
     target_motor_current_[1] = pid_wheel_omega_[1].Calculate(
