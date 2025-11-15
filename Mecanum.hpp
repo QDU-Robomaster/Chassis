@@ -17,6 +17,7 @@ depends: []
 #include "event.hpp"
 #include "libxr_time.hpp"
 #include "pid.hpp"
+#include "thread.hpp"
 
 #define MAXIMUM_ANGULAR_SPEED_OF_MOTOR_OUTPUT_SHAFT \
   52 /* 电机输出轴最大角速度 */
@@ -112,6 +113,7 @@ class Mecanum {
    * @details 控制线程主循环，负责接收控制指令、执行运动学解算和动力学控制输出
    */
   static void ThreadFunction(Mecanum *mecanum) {
+    auto last_time = LibXR::Timebase::GetMilliseconds();
     LibXR::Topic::ASyncSubscriber<CMD::ChassisCMD> cmd_suber("chassis_cmd");
 
     cmd_suber.StartWaiting();
@@ -131,8 +133,7 @@ class Mecanum {
       mecanum->mutex_.Unlock();
       mecanum->OutputToDynamics();
 
-      auto last_time = LibXR::Timebase::GetMilliseconds();
-      mecanum->thread_.SleepUntil(last_time, 2.0f);
+      mecanum->thread_.SleepUntil(last_time, 2);
     }
   }
 

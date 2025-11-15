@@ -112,6 +112,8 @@ class Omni {
    * @details 控制线程主循环，负责接收控制指令、执行运动学解算和动力学控制输出
    */
   static void ThreadFunction(Omni *omni) {
+    auto last_time = LibXR::Timebase::GetMilliseconds();
+
     LibXR::Topic::ASyncSubscriber<CMD::ChassisCMD> cmd_suber("chassis_cmd");
 
     cmd_suber.StartWaiting();
@@ -131,8 +133,7 @@ class Omni {
       omni->mutex_.Unlock();
       omni->OutputToDynamics();
 
-      auto last_time = LibXR::Timebase::GetMilliseconds();
-      omni->thread_.SleepUntil(last_time, 2.0f);
+      omni->thread_.SleepUntil(last_time, 2);
     }
   }
 
