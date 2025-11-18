@@ -125,6 +125,7 @@ depends:
 
 #include <cstdint>
 
+#include "CMD.hpp"
 #include "Mecanum.hpp"
 #include "Omni.hpp"
 #include "RMMotor.hpp"
