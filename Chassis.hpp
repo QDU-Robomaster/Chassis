@@ -4,74 +4,73 @@
 /* === MODULE MANIFEST V2 ===
 module_description: No description provided
 constructor_args:
-  - cmd: '@cmd'
-  - motor_wheel_0: '@motor_can1.GetMotor(0)'
-  - motor_wheel_1: '@motor_can1.GetMotor(1)'
-  - motor_wheel_2: '@motor_can1.GetMotor(2)'
-  - motor_wheel_3: '@motor_can1.GetMotor(3)'
-  - motor_steer_0: '@motor_can1.GetMotor(4)'
-  - motor_steer_1: '@motor_can1.GetMotor(5)'
-  - motor_steer_2: '@motor_can1.GetMotor(6)'
-  - motor_steer_3: '@motor_can1.GetMotor(7)'
-  - task_stack_depth: 2048
+  - motor_wheel_0: '@&motor_wheel_0'
+  - motor_wheel_1: '@&motor_wheel_1'
+  - motor_wheel_2: '@&motor_wheel_2'
+  - motor_wheel_3: '@&motor_wheel_3'
+  - motor_steer_0: '@&motor_steer_0'
+  - motor_steer_1: '@&motor_steer_1'
+  - motor_steer_2: '@&motor_steer_2'
+  - motor_steer_3: '@&motor_steer_3'
+  - task_stack_depth: 4096
   - ChassisParam:
-      wheel_radius: 0.0
-      wheel_to_center: 0.0
+      wheel_radius: 0.063
+      wheel_to_center: 0.31
       gravity_height: 0.0
-      reductionratio: 0.0
+      reductionratio: 15.7647
       wheel_resistance: 0.0
       error_compensation: 0.0
   - pid_velocity_x_:
-      k: 1.0
-      p: 0.0
+      k: 0.0015
+      p: 14.0
       i: 0.0
       d: 0.0
       i_limit: 0.0
       out_limit: 0.0
       cycle: false
   - pid_velocity_y_:
-      k: 1.0
-      p: 0.0
+      k: 0.0015
+      p: 14.0
       i: 0.0
       d: 0.0
       i_limit: 0.0
       out_limit: 0.0
       cycle: false
   - pid_omega_:
-      k: 1.0
-      p: 0.0
+      k: 0.0015
+      p: 14.0
       i: 0.0
       d: 0.0
       i_limit: 0.0
       out_limit: 0.0
       cycle: false
   - pid_wheel_angle_0_:
-      k: 1.0
-      p: 0.0
+      k: 0.0001
+      p: 0.02
       i: 0.0
       d: 0.0
       i_limit: 0.0
       out_limit: 0.0
       cycle: false
   - pid_wheel_angle_1_:
-      k: 1.0
-      p: 0.0
+      k: 0.0001
+      p: 0.02
       i: 0.0
       d: 0.0
       i_limit: 0.0
       out_limit: 0.0
       cycle: false
   - pid_wheel_angle_2_:
-      k: 1.0
-      p: 0.0
+      k: 0.0001
+      p: 0.02
       i: 0.0
       d: 0.0
       i_limit: 0.0
       out_limit: 0.0
       cycle: false
   - pid_wheel_angle_3_:
-      k: 1.0
-      p: 0.0
+      k: 0.0001
+      p: 0.02
       i: 0.0
       d: 0.0
       i_limit: 0.0
@@ -110,15 +109,13 @@ constructor_args:
       out_limit: 0.0
       cycle: false
 template_args:
-  - ChassisType: Omni<RMMotorContainer>
-  - MotorType: RMMotorContainer
+  - ChassisType: Omni
 required_hardware:
   - dr16
   - motor
   - can
   - bmi088
 depends:
-  - qdu-future/CMD
   - qdu-future/BMI088
   - qdu-future/Motor
   - xrobot-org/MadgwickAHRS
@@ -128,10 +125,9 @@ depends:
 #include <cstdint>
 
 #include "CMD.hpp"
-#include "Helm.hpp"
 #include "Mecanum.hpp"
-#include "Motor.hpp"
 #include "Omni.hpp"
+#include "RMMotor.hpp"
 #include "app_framework.hpp"
 #include "pid.hpp"
 
@@ -142,7 +138,7 @@ enum class ChassisEvent : uint8_t {
   SET_MODE_INDENPENDENT,
 };
 
-template <typename ChassisType, typename MotorType>
+template <typename ChassisType>
 class Chassis : public LibXR::Application {
  public:
   struct ChassisParam {
@@ -155,15 +151,11 @@ class Chassis : public LibXR::Application {
   };
 
   Chassis(LibXR::HardwareContainer &hw, LibXR::ApplicationManager &app,
-          CMD &cmd, typename MotorType::RMMotor *motor_wheel_0,
-          typename MotorType::RMMotor *motor_wheel_1,
-          typename MotorType::RMMotor *motor_wheel_2,
-          typename MotorType::RMMotor *motor_wheel_3,
-          typename MotorType::RMMotor *motor_steer_0,
-          typename MotorType::RMMotor *motor_steer_1,
-          typename MotorType::RMMotor *motor_steer_2,
-          typename MotorType::RMMotor *motor_steer_3, uint32_t task_stack_depth,
-          ChassisParam chassis_param = {},
+RMMotor *motor_wheel_0, RMMotor *motor_wheel_1,
+          RMMotor *motor_wheel_2, RMMotor *motor_wheel_3,
+          RMMotor *motor_steer_0, RMMotor *motor_steer_1,
+          RMMotor *motor_steer_2, RMMotor *motor_steer_3,
+          uint32_t task_stack_depth, ChassisParam chassis_param = {},
           LibXR::PID<float>::Param pid_velocity_x_ = {},
           LibXR::PID<float>::Param pid_velocity_y_ = {},
           LibXR::PID<float>::Param pid_omega_ = {},
@@ -175,7 +167,7 @@ class Chassis : public LibXR::Application {
           LibXR::PID<float>::Param pid_steer_angle_1_ = {},
           LibXR::PID<float>::Param pid_steer_angle_2_ = {},
           LibXR::PID<float>::Param pid_steer_angle_3_ = {})
-      : chassis_(hw, app, cmd, motor_wheel_0, motor_wheel_1, motor_wheel_2,
+      : chassis_(hw, app, motor_wheel_0, motor_wheel_1, motor_wheel_2,
                  motor_wheel_3, motor_steer_0, motor_steer_1, motor_steer_2,
                  motor_steer_3, task_stack_depth,
                  typename ChassisType::ChassisParam{

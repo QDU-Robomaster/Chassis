@@ -12,9 +12,10 @@ depends: []
 #include <cstdint>
 
 #include "CMD.hpp"
-#include "Motor.hpp"
+#include "RMMotor.hpp"
 #include "app_framework.hpp"
 #include "event.hpp"
+#include "libxr_def.hpp"
 #include "libxr_time.hpp"
 #include "pid.hpp"
 #include "thread.hpp"
@@ -22,10 +23,8 @@ depends: []
 #define MAXIMUM_ANGULAR_SPEED_OF_MOTOR_OUTPUT_SHAFT \
   52 /* 电机输出轴最大角速度 */
 
-template <typename ChassisType, typename MotorType>
+template <typename ChassisType>
 class Chassis;
-
-template <typename MotorType>
 class Mecanum {
  public:
   struct ChassisParam {
@@ -64,32 +63,27 @@ class Mecanum {
    * @param pid_steer_angle_2 舵机2角度PID参数（本底盘未使用）
    * @param pid_steer_angle_3 舵机3角度PID参数（本底盘未使用）
    */
-  Mecanum(LibXR::HardwareContainer &hw, LibXR::ApplicationManager &app, CMD &cmd,
-       typename MotorType::RMMotor *motor_wheel_0,
-       typename MotorType::RMMotor *motor_wheel_1,
-       typename MotorType::RMMotor *motor_wheel_2,
-       typename MotorType::RMMotor *motor_wheel_3,
-       typename MotorType::RMMotor *motor_steer_0,
-       typename MotorType::RMMotor *motor_steer_1,
-       typename MotorType::RMMotor *motor_steer_2,
-       typename MotorType::RMMotor *motor_steer_3, uint32_t task_stack_depth,
-       ChassisParam chassis_param, LibXR::PID<float>::Param pid_velocity_x,
-       LibXR::PID<float>::Param pid_velocity_y,
-       LibXR::PID<float>::Param pid_omega,
-       LibXR::PID<float>::Param pid_wheel_omega_0,
-       LibXR::PID<float>::Param pid_wheel_omega_1,
-       LibXR::PID<float>::Param pid_wheel_omega_2,
-       LibXR::PID<float>::Param pid_wheel_omega_3,
-       LibXR::PID<float>::Param pid_steer_angle_0,
-       LibXR::PID<float>::Param pid_steer_angle_1,
-       LibXR::PID<float>::Param pid_steer_angle_2,
-       LibXR::PID<float>::Param pid_steer_angle_3)
+  Mecanum(LibXR::HardwareContainer &hw, LibXR::ApplicationManager &app, RMMotor *motor_wheel_0, RMMotor *motor_wheel_1,
+          RMMotor *motor_wheel_2, RMMotor *motor_wheel_3,
+          RMMotor *motor_steer_0, RMMotor *motor_steer_1,
+          RMMotor *motor_steer_2, RMMotor *motor_steer_3,
+          uint32_t task_stack_depth, ChassisParam chassis_param,
+          LibXR::PID<float>::Param pid_velocity_x,
+          LibXR::PID<float>::Param pid_velocity_y,
+          LibXR::PID<float>::Param pid_omega,
+          LibXR::PID<float>::Param pid_wheel_omega_0,
+          LibXR::PID<float>::Param pid_wheel_omega_1,
+          LibXR::PID<float>::Param pid_wheel_omega_2,
+          LibXR::PID<float>::Param pid_wheel_omega_3,
+          LibXR::PID<float>::Param pid_steer_angle_0,
+          LibXR::PID<float>::Param pid_steer_angle_1,
+          LibXR::PID<float>::Param pid_steer_angle_2,
+          LibXR::PID<float>::Param pid_steer_angle_3)
       : PARAM(chassis_param),
         motor_wheel_0_(motor_wheel_0),
         motor_wheel_1_(motor_wheel_1),
         motor_wheel_2_(motor_wheel_2),
         motor_wheel_3_(motor_wheel_3),
-        cmd_(&cmd),
         pid_velocity_x_(pid_velocity_x),
         pid_velocity_y_(pid_velocity_y),
         pid_omega_(pid_omega),
@@ -103,8 +97,8 @@ class Mecanum {
     UNUSED(motor_steer_1);
     UNUSED(motor_steer_2);
     UNUSED(motor_steer_3);
-    thread_.Create(this, ThreadFunction, "MecanumChassisThread", task_stack_depth,
-                   LibXR::Thread::Priority::MEDIUM);
+    thread_.Create(this, ThreadFunction, "MecanumChassisThread",
+                   task_stack_depth, LibXR::Thread::Priority::MEDIUM);
   }
 
   /**
@@ -113,10 +107,13 @@ class Mecanum {
    * @details 控制线程主循环，负责接收控制指令、执行运动学解算和动力学控制输出
    */
   static void ThreadFunction(Mecanum *mecanum) {
+    mecanum->mutex_.Lock();
     auto last_time = LibXR::Timebase::GetMilliseconds();
     LibXR::Topic::ASyncSubscriber<CMD::ChassisCMD> cmd_suber("chassis_cmd");
-
     cmd_suber.StartWaiting();
+
+    mecanum->mutex_.Unlock();
+
     while (true) {
       if (cmd_suber.Available()) {
         mecanum->cmd_data_ = cmd_suber.GetData();
@@ -196,18 +193,18 @@ class Mecanum {
    * @details 根据目标底盘速度（vx, vy, ω），计算四个全向轮的目标角速度
    */
   void InverseKinematicsSolution() {
-    target_motor_omega_[0] = (-now_vx_ + now_vx_ +
-                              now_omega_ * PARAM.wheel_to_center) /
-                             PARAM.wheel_radius;
-    target_motor_omega_[1] = (-target_vx_ - target_vy_ +
-                              now_omega_ * PARAM.wheel_to_center) /
-                             PARAM.wheel_radius;
-    target_motor_omega_[2] = (target_vx_ - target_vy_ +
-                              now_omega_ * PARAM.wheel_to_center) /
-                             PARAM.wheel_radius;
-    target_motor_omega_[3] = (target_vx_ + target_vy_ +
-                              now_omega_ * PARAM.wheel_to_center) /
-                             PARAM.wheel_radius;
+    target_motor_omega_[0] =
+        (-now_vx_ + now_vx_ + now_omega_ * PARAM.wheel_to_center) /
+        PARAM.wheel_radius;
+    target_motor_omega_[1] =
+        (-target_vx_ - target_vy_ + now_omega_ * PARAM.wheel_to_center) /
+        PARAM.wheel_radius;
+    target_motor_omega_[2] =
+        (target_vx_ - target_vy_ + now_omega_ * PARAM.wheel_to_center) /
+        PARAM.wheel_radius;
+    target_motor_omega_[3] =
+        (target_vx_ + target_vy_ + now_omega_ * PARAM.wheel_to_center) /
+        PARAM.wheel_radius;
   }
 
   /**
@@ -216,26 +213,22 @@ class Mecanum {
    * 通过运动学正解算出底盘现在的运动状态，并与目标状态进行PID控制，获得目标前馈力矩
    */
   void DynamicInverseSolution() {
-    //TODO:添加功率控制和打滑检测
+    // TODO:添加功率控制和打滑检测
     float force_x = pid_velocity_x_.Calculate(target_vx_, now_vx_, dt_);
     float force_y = pid_velocity_y_.Calculate(target_vy_, now_vy_, dt_);
     float torque = pid_omega_.Calculate(target_omega_, now_omega_, dt_);
 
     target_motor_force_[0] =
-        (-force_x / 4 / PARAM.wheel_radius +
-         force_y / 4 / PARAM.wheel_radius +
+        (-force_x / 4 / PARAM.wheel_radius + force_y / 4 / PARAM.wheel_radius +
          torque * PARAM.wheel_to_center / 4 / PARAM.wheel_radius);
     target_motor_force_[1] =
-        (-force_x / 4 / PARAM.wheel_radius -
-         force_y / 4 / PARAM.wheel_radius +
+        (-force_x / 4 / PARAM.wheel_radius - force_y / 4 / PARAM.wheel_radius +
          torque * PARAM.wheel_to_center / 4 / PARAM.wheel_radius);
     target_motor_force_[2] =
-        (force_x / 4 / PARAM.wheel_radius -
-         force_y / 4 / PARAM.wheel_radius +
+        (force_x / 4 / PARAM.wheel_radius - force_y / 4 / PARAM.wheel_radius +
          torque * PARAM.wheel_to_center / 4 / PARAM.wheel_radius);
     target_motor_force_[3] =
-        (force_x / 4 / PARAM.wheel_radius +
-         force_y / 4 / PARAM.wheel_radius +
+        (force_x / 4 / PARAM.wheel_radius + force_y / 4 / PARAM.wheel_radius +
          torque * PARAM.wheel_to_center / 4 / PARAM.wheel_radius);
   }
 
@@ -244,7 +237,7 @@ class Mecanum {
    * @details 限幅并输出四个全向轮的电流控制指令
    */
   void OutputToDynamics() {
-    //TODO:判断电机返回值是否正常
+    // TODO:判断电机返回值是否正常
     target_motor_current_[0] = pid_wheel_omega_[0].Calculate(
         target_motor_omega_[0], motor_wheel_0_->GetOmega(), dt_);
     target_motor_current_[1] = pid_wheel_omega_[1].Calculate(
@@ -281,16 +274,13 @@ class Mecanum {
   float target_vy_ = 0.0f;
   float target_omega_ = 0.0f;
 
-  float max_current_ = 1.0f;
-
   float dt_ = 0;
   LibXR::MicrosecondTimestamp last_online_time_ = 0;
 
-  typename MotorType::RMMotor *motor_wheel_0_;
-  typename MotorType::RMMotor *motor_wheel_1_;
-  typename MotorType::RMMotor *motor_wheel_2_;
-  typename MotorType::RMMotor *motor_wheel_3_;
-  CMD *cmd_;
+  RMMotor *motor_wheel_0_;
+  RMMotor *motor_wheel_1_;
+  RMMotor *motor_wheel_2_;
+  RMMotor *motor_wheel_3_;
 
   LibXR::PID<float> pid_velocity_x_;
   LibXR::PID<float> pid_velocity_y_;
