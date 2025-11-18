@@ -83,9 +83,14 @@ jobs:
       - name: Add modules
         run: |
           xrobot_add_mod BlinkLED --instance-id BlinkLED_0
-          xrobot_add_mod Motor --instance-id motor_can1
-          xrobot_add_mod Motor --instance-id motor_can2
-          xrobot_add_mod CMD --instance-id cmd
+          xrobot_add_mod RMMotor --instance-id motor_wheel_0
+          xrobot_add_mod RMMotor --instance-id motor_wheel_1
+          xrobot_add_mod RMMotor --instance-id motor_wheel_2
+          xrobot_add_mod RMMotor --instance-id motor_wheel_3
+          xrobot_add_mod RMMotor --instance-id motor_wheel_4
+          xrobot_add_mod RMMotor --instance-id motor_wheel_5
+          xrobot_add_mod RMMotor --instance-id motor_wheel_6
+          xrobot_add_mod RMMotor --instance-id motor_wheel_7
 
       - name: Add this repo module
         run: |
