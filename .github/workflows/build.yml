@@ -97,6 +97,7 @@ jobs:
           xrobot_add_mod RMMotor --instance-id motor_wheel_5
           xrobot_add_mod RMMotor --instance-id motor_wheel_6
           xrobot_add_mod RMMotor --instance-id motor_wheel_7
+          xrobot_add_mod CMD --instance-id cmd
 
       - name: Add this repo module
         run: |
