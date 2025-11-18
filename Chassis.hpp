@@ -118,13 +118,13 @@ required_hardware:
 depends:
   - qdu-future/BMI088
   - qdu-future/RMMotor
+  - qdu-future/CMD
   - xrobot-org/MadgwickAHRS
 === END MANIFEST === */
 // clang-format on
 
 #include <cstdint>
 
-#include "CMD.hpp"
 #include "Mecanum.hpp"
 #include "Omni.hpp"
 #include "RMMotor.hpp"
