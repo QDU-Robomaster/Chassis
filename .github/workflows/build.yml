@@ -93,10 +93,10 @@ jobs:
           xrobot_add_mod RMMotor --instance-id motor_wheel_1
           xrobot_add_mod RMMotor --instance-id motor_wheel_2
           xrobot_add_mod RMMotor --instance-id motor_wheel_3
-          xrobot_add_mod RMMotor --instance-id motor_wheel_4
-          xrobot_add_mod RMMotor --instance-id motor_wheel_5
-          xrobot_add_mod RMMotor --instance-id motor_wheel_6
-          xrobot_add_mod RMMotor --instance-id motor_wheel_7
+          xrobot_add_mod RMMotor --instance-id motor_steer_0
+          xrobot_add_mod RMMotor --instance-id motor_steer_1
+          xrobot_add_mod RMMotor --instance-id motor_steer_2
+          xrobot_add_mod RMMotor --instance-id motor_steer_3
           xrobot_add_mod CMD --instance-id cmd
 
       - name: Add this repo module
