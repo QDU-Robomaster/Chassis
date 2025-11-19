@@ -16,6 +16,7 @@ depends: []
 #include "app_framework.hpp"
 #include "event.hpp"
 #include "libxr_def.hpp"
+#include "libxr_rw.hpp"
 #include "libxr_time.hpp"
 #include "pid.hpp"
 
@@ -90,7 +91,8 @@ class Omni {
         pid_wheel_omega_{pid_wheel_omega_0, pid_wheel_omega_1,
                          pid_wheel_omega_2, pid_wheel_omega_3},
         pid_steer_angle_{pid_steer_angle_0, pid_steer_angle_1,
-                         pid_steer_angle_2, pid_steer_angle_3} {
+                         pid_steer_angle_2, pid_steer_angle_3},
+        cmd_file_(InitCmdFile()) {
     UNUSED(hw);
     UNUSED(app);
     UNUSED(motor_steer_0);
@@ -99,6 +101,7 @@ class Omni {
     UNUSED(motor_steer_3);
     thread_.Create(this, ThreadFunction, "OmniChassisThread", task_stack_depth,
                    LibXR::Thread::Priority::MEDIUM);
+    hw.template FindOrExit<LibXR::RamFS>({"ramfs"})->Add(cmd_file_);
   }
 
   /**
@@ -265,6 +268,76 @@ class Omni {
     motor_wheel_2_->TorqueControl(output_[2], PARAM.reductionratio);
     motor_wheel_3_->TorqueControl(output_[3], PARAM.reductionratio);
   }
+  static int CommandFunc(Omni *self, int argc, char **argv) {
+    if (argc == 1) {
+      LibXR::STDIO::Printf("Usage:\r\n");
+      LibXR::STDIO::Printf(
+          "  monitor                          - Print chassis motor feedback "
+          "once\r\n");
+      LibXR::STDIO::Printf(
+          "  monitor <time_ms> [interval_ms]  - Monitor chassis motor "
+          "feedback\r\n");
+      return 0;
+    }
+
+    if (strcmp(argv[1], "monitor") != 0) {
+      LibXR::STDIO::Printf("Error: Unknown command '%s'.\r\n", argv[1]);
+      return -1;
+    }
+
+    auto print_feedback = [self]() {
+      LibXR::STDIO::Printf("[%lu ms] Chassis Motors Feedback:\r\n",
+                           LibXR::Thread::GetTime());
+      LibXR::STDIO::Printf(
+          "  Motor 0 - Angle: %.2f rad, RPM: %.0f, Current: %.2f A, Temp: %.0f "
+          "C\r\n",
+          self->motor_wheel_0_->GetAngle(), self->motor_wheel_0_->GetRPM(),
+          self->motor_wheel_0_->GetCurrent(), self->motor_wheel_0_->GetTemp());
+      self->thread_.Sleep(1);
+      LibXR::STDIO::Printf(
+          "  Motor 1 - Angle: %.2f rad, RPM: %.0f, Current: %.2f A, Temp: %.0f "
+          "C\r\n",
+          self->motor_wheel_1_->GetAngle(), self->motor_wheel_1_->GetRPM(),
+          self->motor_wheel_1_->GetCurrent(), self->motor_wheel_1_->GetTemp());
+      self->thread_.Sleep(1);
+      LibXR::STDIO::Printf(
+          "  Motor 2 - Angle: %.2f rad, RPM: %.0f, Current: %.2f A, Temp: %.0f "
+          "C\r\n",
+          self->motor_wheel_2_->GetAngle(), self->motor_wheel_2_->GetRPM(),
+          self->motor_wheel_2_->GetCurrent(), self->motor_wheel_2_->GetTemp());
+      self->thread_.Sleep(1);
+      LibXR::STDIO::Printf(
+          "  Motor 3 - Angle: %.2f rad, RPM: %.0f, Current: %.2f A, Temp: %.0f "
+          "C\r\n",
+          self->motor_wheel_3_->GetAngle(), self->motor_wheel_3_->GetRPM(),
+          self->motor_wheel_3_->GetCurrent(), self->motor_wheel_3_->GetTemp());
+      self->thread_.Sleep(1);
+      LibXR::STDIO::Printf(
+          "  Chassis Now State - VX: %.2f, VY: %.2f, Omega: %.2f\r\n",
+          self->now_vx_, self->now_vy_, self->now_omega_);
+      LibXR::STDIO::Printf(
+          "  Chassis Target State - VX: %.2f, VY: %.2f, Omega: %.2f\r\n",
+          self->target_vx_, self->target_vy_, self->target_omega_);
+      self->thread_.Sleep(1);
+    };
+
+    if (argc == 2) {
+      print_feedback();
+    } else if (argc >= 3) {
+      int time = atoi(argv[2]);
+      int delay = (argc == 4) ? atoi(argv[3]) : 1000;
+      while (time > 0) {
+        print_feedback();
+        LibXR::Thread::Sleep(delay);
+        time -= delay;
+      }
+    } else {
+      LibXR::STDIO::Printf("Error: Invalid arguments.\r\n");
+      return -1;
+    }
+
+    return 0;
+  }
 
  private:
   const ChassisParam PARAM;
@@ -309,4 +382,18 @@ class Omni {
 
   CMD::ChassisCMD cmd_data_;
   uint32_t chassis_event_ = 0;
+
+  LibXR::RamFS::File cmd_file_;
+  char *cmd_name_;
+
+  LibXR::RamFS::File InitCmdFile() {
+    const char *prefix = "omni_chassis";
+    size_t prefix_len = strlen(prefix);
+
+    cmd_name_ = new char[prefix_len + 1];
+    memcpy(cmd_name_, prefix, prefix_len);
+    cmd_name_[prefix_len] = '\0';
+
+    return LibXR::RamFS::CreateFile(cmd_name_, CommandFunc, this);
+  }
 };
