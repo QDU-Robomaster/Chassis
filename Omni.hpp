@@ -294,9 +294,16 @@ class Omni {
   LibXR::PID<float> pid_velocity_y_;
   LibXR::PID<float> pid_omega_;
 
-  LibXR::PID<float> pid_wheel_omega_[4]{0.0f, 0.0f, 0.0f, 0.0f};
-  LibXR::PID<float> pid_steer_angle_[4]{0.0f, 0.0f, 0.0f, 0.0f};
-
+  LibXR::PID<float> pid_wheel_omega_[4] = {
+      LibXR::PID<float>(LibXR::PID<float>::Param()),
+      LibXR::PID<float>(LibXR::PID<float>::Param()),
+      LibXR::PID<float>(LibXR::PID<float>::Param()),
+      LibXR::PID<float>(LibXR::PID<float>::Param())};
+  LibXR::PID<float> pid_steer_angle_[4] = {
+      LibXR::PID<float>(LibXR::PID<float>::Param()),
+      LibXR::PID<float>(LibXR::PID<float>::Param()),
+      LibXR::PID<float>(LibXR::PID<float>::Param()),
+      LibXR::PID<float>(LibXR::PID<float>::Param())};
   LibXR::Thread thread_;
   LibXR::Mutex mutex_;
 
