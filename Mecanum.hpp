@@ -63,10 +63,11 @@ class Mecanum {
    * @param pid_steer_angle_2 舵机2角度PID参数（本底盘未使用）
    * @param pid_steer_angle_3 舵机3角度PID参数（本底盘未使用）
    */
-  Mecanum(LibXR::HardwareContainer &hw, LibXR::ApplicationManager &app, RMMotor *motor_wheel_0, RMMotor *motor_wheel_1,
+  Mecanum(LibXR::HardwareContainer &hw, LibXR::ApplicationManager &app,
+          RMMotor *motor_wheel_0, RMMotor *motor_wheel_1,
           RMMotor *motor_wheel_2, RMMotor *motor_wheel_3,
           RMMotor *motor_steer_0, RMMotor *motor_steer_1,
-          RMMotor *motor_steer_2, RMMotor *motor_steer_3,
+          RMMotor *motor_steer_2, RMMotor *motor_steer_3, CMD *cmd,
           uint32_t task_stack_depth, ChassisParam chassis_param,
           LibXR::PID<float>::Param pid_velocity_x,
           LibXR::PID<float>::Param pid_velocity_y,
@@ -90,7 +91,8 @@ class Mecanum {
         pid_wheel_omega_{pid_wheel_omega_0, pid_wheel_omega_1,
                          pid_wheel_omega_2, pid_wheel_omega_3},
         pid_steer_angle_{pid_steer_angle_0, pid_steer_angle_1,
-                         pid_steer_angle_2, pid_steer_angle_3} {
+                         pid_steer_angle_2, pid_steer_angle_3},
+        cmd_(cmd) {
     UNUSED(hw);
     UNUSED(app);
     UNUSED(motor_steer_0);
@@ -99,6 +101,14 @@ class Mecanum {
     UNUSED(motor_steer_3);
     thread_.Create(this, ThreadFunction, "MecanumChassisThread",
                    task_stack_depth, LibXR::Thread::Priority::MEDIUM);
+    auto lost_ctrl_callback = LibXR::Callback<uint32_t>::Create(
+        [](bool in_isr, Mecanum *mecanum, uint32_t event_id) {
+          UNUSED(in_isr);
+          UNUSED(event_id);
+          mecanum->LostCtrl();
+        },
+        this);
+    cmd_->GetEvent().Register(CMD::CMD_EVENT_LOST_CTRL, lost_ctrl_callback);
   }
 
   /**
@@ -258,6 +268,13 @@ class Mecanum {
     motor_wheel_3_->TorqueControl(output_[3], PARAM.reductionratio);
   }
 
+  void LostCtrl() {
+    motor_wheel_0_->Relax();
+    motor_wheel_1_->Relax();
+    motor_wheel_2_->Relax();
+    motor_wheel_3_->Relax();
+  }
+
  private:
   const ChassisParam PARAM;
 
@@ -297,6 +314,7 @@ class Mecanum {
       LibXR::PID<float>(LibXR::PID<float>::Param()),
       LibXR::PID<float>(LibXR::PID<float>::Param())};
 
+  CMD *cmd_;
   LibXR::Thread thread_;
   LibXR::Mutex mutex_;
 

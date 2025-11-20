@@ -68,7 +68,7 @@ class Omni {
        RMMotor *motor_wheel_0, RMMotor *motor_wheel_1, RMMotor *motor_wheel_2,
        RMMotor *motor_wheel_3, RMMotor *motor_steer_0, RMMotor *motor_steer_1,
        RMMotor *motor_steer_2, RMMotor *motor_steer_3,
-       uint32_t task_stack_depth, ChassisParam chassis_param,
+       CMD *cmd, uint32_t task_stack_depth, ChassisParam chassis_param,
        LibXR::PID<float>::Param pid_velocity_x,
        LibXR::PID<float>::Param pid_velocity_y,
        LibXR::PID<float>::Param pid_omega,
@@ -92,6 +92,7 @@ class Omni {
                          pid_wheel_omega_2, pid_wheel_omega_3},
         pid_steer_angle_{pid_steer_angle_0, pid_steer_angle_1,
                          pid_steer_angle_2, pid_steer_angle_3},
+        cmd_(cmd),
         cmd_file_(InitCmdFile()) {
     UNUSED(hw);
     UNUSED(app);
@@ -102,6 +103,15 @@ class Omni {
     thread_.Create(this, ThreadFunction, "OmniChassisThread", task_stack_depth,
                    LibXR::Thread::Priority::MEDIUM);
     hw.template FindOrExit<LibXR::RamFS>({"ramfs"})->Add(cmd_file_);
+
+    auto lost_ctrl_callback = LibXR::Callback<uint32_t>::Create(
+        [](bool in_isr, Omni *omni, uint32_t event_id) {
+          UNUSED(in_isr);
+          UNUSED(event_id);
+          omni->LostCtrl();
+        },
+        this);
+        cmd_->GetEvent().Register(CMD::CMD_EVENT_LOST_CTRL,lost_ctrl_callback);
   }
 
   /**
@@ -268,6 +278,14 @@ class Omni {
     motor_wheel_2_->TorqueControl(output_[2], PARAM.reductionratio);
     motor_wheel_3_->TorqueControl(output_[3], PARAM.reductionratio);
   }
+
+  void LostCtrl() {
+    motor_wheel_0_->Relax();
+    motor_wheel_1_->Relax();
+    motor_wheel_2_->Relax();
+    motor_wheel_3_->Relax();
+  }
+
   static int CommandFunc(Omni *self, int argc, char **argv) {
     if (argc == 1) {
       LibXR::STDIO::Printf("Usage:\r\n");
@@ -380,6 +398,7 @@ class Omni {
   LibXR::Thread thread_;
   LibXR::Mutex mutex_;
 
+  CMD *cmd_;
   CMD::ChassisCMD cmd_data_;
   uint32_t chassis_event_ = 0;
 

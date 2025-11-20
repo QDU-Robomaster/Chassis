@@ -12,6 +12,7 @@ constructor_args:
   - motor_steer_1: '@&motor_steer_1'
   - motor_steer_2: '@&motor_steer_2'
   - motor_steer_3: '@&motor_steer_3'
+  - cmd: '@&cmd'
   - task_stack_depth: 4096
   - ChassisParam:
       wheel_radius: 0.063
@@ -130,6 +131,7 @@ depends:
 #include "Omni.hpp"
 #include "RMMotor.hpp"
 #include "app_framework.hpp"
+#include "libxr_def.hpp"
 #include "pid.hpp"
 
 enum class ChassisEvent : uint8_t {
@@ -152,11 +154,11 @@ class Chassis : public LibXR::Application {
   };
 
   Chassis(LibXR::HardwareContainer &hw, LibXR::ApplicationManager &app,
-RMMotor *motor_wheel_0, RMMotor *motor_wheel_1,
+          RMMotor *motor_wheel_0, RMMotor *motor_wheel_1,
           RMMotor *motor_wheel_2, RMMotor *motor_wheel_3,
           RMMotor *motor_steer_0, RMMotor *motor_steer_1,
           RMMotor *motor_steer_2, RMMotor *motor_steer_3,
-          uint32_t task_stack_depth, ChassisParam chassis_param = {},
+          CMD *cmd, uint32_t task_stack_depth, ChassisParam chassis_param = {},
           LibXR::PID<float>::Param pid_velocity_x_ = {},
           LibXR::PID<float>::Param pid_velocity_y_ = {},
           LibXR::PID<float>::Param pid_omega_ = {},
@@ -170,7 +172,7 @@ RMMotor *motor_wheel_0, RMMotor *motor_wheel_1,
           LibXR::PID<float>::Param pid_steer_angle_3_ = {})
       : chassis_(hw, app, motor_wheel_0, motor_wheel_1, motor_wheel_2,
                  motor_wheel_3, motor_steer_0, motor_steer_1, motor_steer_2,
-                 motor_steer_3, task_stack_depth,
+                 motor_steer_3, cmd,task_stack_depth,
                  typename ChassisType::ChassisParam{
                      chassis_param.wheel_radius, chassis_param.wheel_to_center,
                      chassis_param.gravity_height, chassis_param.reductionratio,
@@ -180,19 +182,12 @@ RMMotor *motor_wheel_0, RMMotor *motor_wheel_1,
                  pid_wheel_angle_0_, pid_wheel_angle_1_, pid_wheel_angle_2_,
                  pid_wheel_angle_3_, pid_steer_angle_0_, pid_steer_angle_1_,
                  pid_steer_angle_2_, pid_steer_angle_3_) {
-    auto cb = [](bool in_isr, void *arg, uint32_t event_id) {
-      UNUSED(in_isr);
-      static_cast<Chassis *>(arg)->EventHandler(event_id);
-    };
-
-    using GenericCallbackPtr = void (*)(bool, void *, uint32_t);
-    using TargetCallbackPtr = void (*)(bool, Chassis *, uint32_t);
-
-    GenericCallbackPtr generic_ptr = cb;
-
-    auto specific_ptr = reinterpret_cast<TargetCallbackPtr>(generic_ptr);
-
-    auto callback = LibXR::Callback<uint32_t>::Create(specific_ptr, this);
+    auto callback = LibXR::Callback<uint32_t>::Create(
+        [](bool in_isr, Chassis *chassis, uint32_t event_id) {
+          UNUSED(in_isr);
+          chassis->EventHandler(event_id);
+        },
+        this);
     chassis_event_.Register(static_cast<uint32_t>(ChassisEvent::SET_MODE_RELAX),
                             callback);
     chassis_event_.Register(
