@@ -200,6 +200,7 @@ class Chassis : public LibXR::Application {
 
   /**
    * @brief 获取底盘的事件处理器
+   * @details 通过此事件处理器可以向底盘发送事件消息，控制底盘的行为模式
    * @return LibXR::Event& 事件处理器的引用
    */
   LibXR::Event &GetEvent() { return chassis_event_; }
