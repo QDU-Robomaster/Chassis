@@ -24,7 +24,7 @@ depends: []
 #include "libxr_time.hpp"
 #include "pid.hpp"
 
-#define MAXIMUM_ANGULAR_speed__OF_MOTOR_OUTPUT_SHAFT \
+#define MAXIMUM_ANGULAR_speed_OF_MOTOR_OUTPUT_SHAFT \
   52 /* 电机输出轴最大角速度 */
 
 template <typename ChassisType>
@@ -97,14 +97,14 @@ class Helm {
        LibXR::PID<float>::Param pid_steer_speed_2,
        LibXR::PID<float>::Param pid_steer_speed_3)
       : PARAM(chassis_param),
-        motor_wheel_0_(motor_wheel_1),
-        motor_wheel_1_(motor_wheel_0),
+        motor_wheel_0_(motor_wheel_0),
+        motor_wheel_1_(motor_wheel_1),
         motor_wheel_2_(motor_wheel_2),
         motor_wheel_3_(motor_wheel_3),
-        motor_steer_0_(motor_steer_3),
-        motor_steer_1_(motor_steer_2),
-        motor_steer_2_(motor_steer_1),
-        motor_steer_3_(motor_steer_0),
+        motor_steer_0_(motor_steer_0),
+        motor_steer_1_(motor_steer_1),
+        motor_steer_2_(motor_steer_2),
+        motor_steer_3_(motor_steer_3),
         pid_velocity_x_(pid_velocity_x),
         pid_velocity_y_(pid_velocity_y),
         pid_omega_(pid_omega),

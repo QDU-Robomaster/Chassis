@@ -25,6 +25,8 @@ depends: []
 
 template <typename ChassisType>
 class Chassis;
+
+
 class Mecanum {
  public:
   struct ChassisParam {
@@ -35,7 +37,13 @@ class Mecanum {
     float wheel_resistance = 0.0f;
     float error_compensation = 0.0f;
   };
-
+ enum class Chassismode : uint32_t {
+    RELAX,
+    ROTOR,
+    FOLLOW_GIMBAL_INTERSECT,
+    FOLLOW_GIMBAL_CROSS,
+    INDENPENDENT,
+  };
   /**
    * @brief 构造函数，初始化全向轮底盘控制对象
    * @param hw 硬件容器引用
