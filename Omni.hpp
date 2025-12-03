@@ -120,7 +120,10 @@ class Omni {
     UNUSED(pid_steer_speed_1);
     UNUSED(pid_steer_speed_2);
     UNUSED(pid_steer_speed_3);
-
+    UNUSED(pid_steer_angle_0);
+    UNUSED(pid_steer_angle_1);
+    UNUSED(pid_steer_angle_2);
+    UNUSED(pid_steer_angle_3);
     thread_.Create(this, ThreadFunction, "OmniChassisThread", task_stack_depth,
                    LibXR::Thread::Priority::MEDIUM);
     hw.template FindOrExit<LibXR::RamFS>({"ramfs"})->Add(cmd_file_);
@@ -195,6 +198,7 @@ class Omni {
     pid_wheel_omega_[1].Reset();
     pid_wheel_omega_[2].Reset();
     pid_wheel_omega_[3].Reset();
+
     mutex_.Unlock();
   }
 
