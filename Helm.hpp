@@ -40,12 +40,11 @@ class Helm {
     float error_compensation = 0.0f;
   };
   enum class Chassismode : uint32_t {
-    SET_MODE_RELAX,
-    SET_MODE_ROTOR,
-    SET_MODE_FOLLOW,
-    SET_MODE_INDENPENDENT,
-
-    SET_MODE_6020_FOLLOW
+    RELAX,
+    ROTOR,
+    FOLLOW,
+    INDENPENDENT,
+    FOLLOW6020,
   };
 
   /**
@@ -232,14 +231,14 @@ class Helm {
   void Helmcontrol() {
     // 计算 vx,xy
     switch (chassis_event_) {
-      case static_cast<uint32_t>(Chassismode::SET_MODE_RELAX):  // break
+      case static_cast<uint32_t>(Chassismode::RELAX):  // break
         target_vx_ = 0.0f;
         target_vy_ = 0.0f;
 
         break;
-      case static_cast<uint32_t>(Chassismode::SET_MODE_INDENPENDENT):
+      case static_cast<uint32_t>(Chassismode::INDENPENDENT):
       case static_cast<uint32_t>(
-          Chassismode::SET_MODE_6020_FOLLOW):  // independent  // 6020_follow
+          Chassismode::FOLLOW6020):  // independent  // 6020_follow
         tmp = sqrtf(cmd_data_.x * cmd_data_.x + cmd_data_.y * cmd_data_.y) *
               1.41421f / 2.0f;
 
@@ -255,8 +254,8 @@ class Helm {
 
         break;
       case static_cast<uint32_t>(
-          Chassismode::SET_MODE_FOLLOW):  // gimbal_follow
-      case static_cast<uint32_t>(Chassismode::SET_MODE_ROTOR): {
+          Chassismode::FOLLOW):  // gimbal_follow
+      case static_cast<uint32_t>(Chassismode::ROTOR): {
         float beta = current_yaw_;
         float cos_beta = cosf(beta);
         float sin_beta = sinf(beta);
@@ -272,25 +271,25 @@ class Helm {
     }
     // 计算 wz
     switch (chassis_event_) {
-      case static_cast<uint32_t>(Chassismode::SET_MODE_RELAX):  // break
+      case static_cast<uint32_t>(Chassismode::RELAX):  // break
         target_omega_ = 0.0f;
         break;
       case static_cast<uint32_t>(
-          Chassismode::SET_MODE_INDENPENDENT):  // independent
+          Chassismode::INDENPENDENT):  // independent
         /* 独立模式每个轮子的方向相同，wz当作轮子转向角速度 */
         target_omega_ = cmd_data_.z;
         main_direct_ -= target_omega_ * 6.0 * dt_;  //  6.0为小陀螺转动频率
         break;
       case static_cast<uint32_t>(
-          Chassismode::SET_MODE_6020_FOLLOW):  // 6020_follow
+          Chassismode::FOLLOW6020):  // 6020_follow
         target_omega_ = 0;
         main_direct_ = -current_yaw_;
         break;
       case static_cast<uint32_t>(
-          Chassismode::SET_MODE_FOLLOW):  // gimbal_follow
+          Chassismode::FOLLOW):  // gimbal_follow
         target_omega_ = pid_omega_.Calculate(0.0f, current_yaw_, dt_) * 0.25f;
         break;
-      case static_cast<uint32_t>(Chassismode::SET_MODE_ROTOR):  // rotor
+      case static_cast<uint32_t>(Chassismode::ROTOR):  // rotor
         /* 陀螺模式底盘以一定速度旋转 */
         target_omega_ = wz_dir_mult_ * 1;  // 此处100为之前随机转速
         break;
@@ -301,24 +300,24 @@ class Helm {
 
     // 计算
     switch (chassis_event_) {
-      case static_cast<uint32_t>(Chassismode::SET_MODE_RELAX):  // break
+      case static_cast<uint32_t>(Chassismode::RELAX):  // break
         for (int i = 0; i < 4; i++) {
           speed_[i] = 0.0f;
           angle_[i] = 0.0;
         }
         break;
       case static_cast<uint32_t>(
-          Chassismode::SET_MODE_INDENPENDENT):  // independent
+          Chassismode::INDENPENDENT):  // independent
       case static_cast<uint32_t>(
-          Chassismode::SET_MODE_6020_FOLLOW):  // 6020_follow
+          Chassismode::FOLLOW6020):  // 6020_follow
         for (int i = 0; i < 4; i++) {
           speed_[i] = target_vy_ * max_speed_;
           angle_[i] = main_direct_ + direct_offset_;
         }
         break;
       case static_cast<uint32_t>(
-          Chassismode::SET_MODE_FOLLOW):  // gimbal_follow
-      case static_cast<uint32_t>(Chassismode::SET_MODE_ROTOR):  // rotor
+          Chassismode::FOLLOW):  // gimbal_follow
+      case static_cast<uint32_t>(Chassismode::ROTOR):  // rotor
       {
         float x = 0, y = 0, wheel_pos = 0;
         for (int i = 0; i < 4; i++) {
