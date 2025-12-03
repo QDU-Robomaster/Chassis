@@ -32,11 +32,17 @@ class Omni {
     float wheel_radius = 0.0f;
     float wheel_to_center = 0.0f;
     float gravity_height = 0.0f;
-    float reductionratio = 0.0f;
-    float wheel_resistance = 0.0f;
-    float error_compensation = 0.0f;
+    float reductionratio = 0.0f;      // 减速比
+    float wheel_resistance = 0.0f;    // 轮子阻力
+    float error_compensation = 0.0f;  // 误差补偿
   };
-
+  enum class Chassismode : uint32_t {
+    RELAX,
+    ROTOR,
+    FOLLOW_GIMBAL_INTERSECT,
+    FOLLOW_GIMBAL_CROSS,
+    INDENPENDENT,
+  };
   /**
    * @brief 构造函数，初始化全向轮底盘控制对象
    * @param hw 硬件容器引用
@@ -67,8 +73,8 @@ class Omni {
   Omni(LibXR::HardwareContainer &hw, LibXR::ApplicationManager &app,
        RMMotor *motor_wheel_0, RMMotor *motor_wheel_1, RMMotor *motor_wheel_2,
        RMMotor *motor_wheel_3, RMMotor *motor_steer_0, RMMotor *motor_steer_1,
-       RMMotor *motor_steer_2, RMMotor *motor_steer_3,
-       CMD *cmd, uint32_t task_stack_depth, ChassisParam chassis_param,
+       RMMotor *motor_steer_2, RMMotor *motor_steer_3, CMD *cmd,
+       uint32_t task_stack_depth, ChassisParam chassis_param,
        LibXR::PID<float>::Param pid_velocity_x,
        LibXR::PID<float>::Param pid_velocity_y,
        LibXR::PID<float>::Param pid_omega,
@@ -79,12 +85,20 @@ class Omni {
        LibXR::PID<float>::Param pid_steer_angle_0,
        LibXR::PID<float>::Param pid_steer_angle_1,
        LibXR::PID<float>::Param pid_steer_angle_2,
-       LibXR::PID<float>::Param pid_steer_angle_3)
+       LibXR::PID<float>::Param pid_steer_angle_3,
+       LibXR::PID<float>::Param pid_steer_speed_0,
+       LibXR::PID<float>::Param pid_steer_speed_1,
+       LibXR::PID<float>::Param pid_steer_speed_2,
+       LibXR::PID<float>::Param pid_steer_speed_3)
       : PARAM(chassis_param),
         motor_wheel_0_(motor_wheel_0),
         motor_wheel_1_(motor_wheel_1),
         motor_wheel_2_(motor_wheel_2),
         motor_wheel_3_(motor_wheel_3),
+        motor_steer_0_(motor_steer_0),
+        motor_steer_1_(motor_steer_1),
+        motor_steer_2_(motor_steer_2),
+        motor_steer_3_(motor_steer_3),
         pid_velocity_x_(pid_velocity_x),
         pid_velocity_y_(pid_velocity_y),
         pid_omega_(pid_omega),
@@ -92,6 +106,8 @@ class Omni {
                          pid_wheel_omega_2, pid_wheel_omega_3},
         pid_steer_angle_{pid_steer_angle_0, pid_steer_angle_1,
                          pid_steer_angle_2, pid_steer_angle_3},
+        pid_steer_speed_{pid_steer_speed_0, pid_steer_speed_1,
+                         pid_steer_speed_2, pid_steer_speed_3},
         cmd_(cmd),
         cmd_file_(InitCmdFile()) {
     UNUSED(hw);
@@ -100,6 +116,11 @@ class Omni {
     UNUSED(motor_steer_1);
     UNUSED(motor_steer_2);
     UNUSED(motor_steer_3);
+    UNUSED(pid_steer_speed_0);
+    UNUSED(pid_steer_speed_1);
+    UNUSED(pid_steer_speed_2);
+    UNUSED(pid_steer_speed_3);
+
     thread_.Create(this, ThreadFunction, "OmniChassisThread", task_stack_depth,
                    LibXR::Thread::Priority::MEDIUM);
     hw.template FindOrExit<LibXR::RamFS>({"ramfs"})->Add(cmd_file_);
@@ -167,6 +188,13 @@ class Omni {
   void SetMode(uint32_t mode) {
     mutex_.Lock();
     chassis_event_ = mode;
+    pid_omega_.Reset();
+    pid_velocity_x_.Reset();
+    pid_velocity_y_.Reset();
+    pid_wheel_omega_[0].Reset();
+    pid_wheel_omega_[1].Reset();
+    pid_wheel_omega_[2].Reset();
+    pid_wheel_omega_[3].Reset();
     mutex_.Unlock();
   }
 
@@ -176,12 +204,33 @@ class Omni {
    */
   void UpdateSetpointFromCMD() {
     const float SQRT2 = 1.41421356237f;
-    target_vx_ = cmd_data_.y * MAXIMUM_ANGULAR_SPEED_OF_MOTOR_OUTPUT_SHAFT *
+
+    switch (chassis_event_) {
+      case static_cast<uint32_t>(Chassismode::RELAX):
+        target_vx_ = 0.0f;
+        target_vy_ = 0.0f;
+        target_omega_ = 0.0f;
+        break;
+      case static_cast<uint32_t>(Chassismode::ROTOR):
+
+      break;
+      case static_cast<uint32_t>(Chassismode::FOLLOW_GIMBAL_INTERSECT):
+      break;
+      case static_cast<uint32_t>(Chassismode::FOLLOW_GIMBAL_CROSS):
+      break;
+      case static_cast<uint32_t>(Chassismode::INDENPENDENT):
+          target_vx_ = cmd_data_.y * MAXIMUM_ANGULAR_SPEED_OF_MOTOR_OUTPUT_SHAFT *
                  this->PARAM.wheel_radius * SQRT2;
-    target_vy_ = cmd_data_.x * MAXIMUM_ANGULAR_SPEED_OF_MOTOR_OUTPUT_SHAFT *
+          target_vy_ = cmd_data_.x * MAXIMUM_ANGULAR_SPEED_OF_MOTOR_OUTPUT_SHAFT *
                  this->PARAM.wheel_radius * SQRT2;
-    target_omega_ = -cmd_data_.z * MAXIMUM_ANGULAR_SPEED_OF_MOTOR_OUTPUT_SHAFT *
-                    this->PARAM.wheel_to_center * SQRT2;
+          target_omega_ = -cmd_data_.z * MAXIMUM_ANGULAR_SPEED_OF_MOTOR_OUTPUT_SHAFT *
+                 this->PARAM.wheel_to_center * SQRT2;
+        break;
+      default:
+        break;
+
+    }
+
   }
 
   /**
@@ -208,17 +257,17 @@ class Omni {
   void InverseKinematicsSolution() {
     const float SQRT1 = 0.70710678118f;
 
-    target_motor_omega_[0] = (-SQRT1 * now_vx_ + SQRT1 * now_vx_ +
-                              now_omega_ * PARAM.wheel_to_center) /
+    target_motor_omega_[0] = (-SQRT1 * target_vx_ + SQRT1 * target_vy_ +
+                              target_omega_ * PARAM.wheel_to_center) /
                              PARAM.wheel_radius;
     target_motor_omega_[1] = (-SQRT1 * target_vx_ - SQRT1 * target_vy_ +
-                              now_omega_ * PARAM.wheel_to_center) /
+                              target_omega_ * PARAM.wheel_to_center) /
                              PARAM.wheel_radius;
     target_motor_omega_[2] = (SQRT1 * target_vx_ - SQRT1 * target_vy_ +
-                              now_omega_ * PARAM.wheel_to_center) /
+                              target_omega_ * PARAM.wheel_to_center) /
                              PARAM.wheel_radius;
     target_motor_omega_[3] = (SQRT1 * target_vx_ + SQRT1 * target_vy_ +
-                              now_omega_ * PARAM.wheel_to_center) /
+                              target_omega_ * PARAM.wheel_to_center) /
                              PARAM.wheel_radius;
   }
 
@@ -381,6 +430,11 @@ class Omni {
   RMMotor *motor_wheel_2_;
   RMMotor *motor_wheel_3_;
 
+  RMMotor *motor_steer_0_;
+  RMMotor *motor_steer_1_;
+  RMMotor *motor_steer_2_;
+  RMMotor *motor_steer_3_;
+
   LibXR::PID<float> pid_velocity_x_;
   LibXR::PID<float> pid_velocity_y_;
   LibXR::PID<float> pid_omega_;
@@ -391,6 +445,12 @@ class Omni {
       LibXR::PID<float>(LibXR::PID<float>::Param()),
       LibXR::PID<float>(LibXR::PID<float>::Param())};
   LibXR::PID<float> pid_steer_angle_[4] = {
+      LibXR::PID<float>(LibXR::PID<float>::Param()),
+      LibXR::PID<float>(LibXR::PID<float>::Param()),
+      LibXR::PID<float>(LibXR::PID<float>::Param()),
+      LibXR::PID<float>(LibXR::PID<float>::Param())};
+
+  LibXR::PID<float> pid_steer_speed_[4] = {
       LibXR::PID<float>(LibXR::PID<float>::Param()),
       LibXR::PID<float>(LibXR::PID<float>::Param()),
       LibXR::PID<float>(LibXR::PID<float>::Param()),

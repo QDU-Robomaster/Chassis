@@ -166,6 +166,9 @@ class Mecanum {
   void SetMode(uint32_t mode) {
     mutex_.Lock();
     chassis_event_ = mode;
+    pid_omega_.Reset();
+    pid_velocity_x_.Reset();
+    pid_velocity_y_.Reset();
     mutex_.Unlock();
   }
 
