@@ -9,10 +9,6 @@ required_hardware: []
 depends: []
 === END MANIFEST === */
 // clang-format on
-#include <algorithm>
-#include <cmath>
-#include <cstdint>
-#include <limits>
 
 #include "CMD.hpp"
 #include "Chassis.hpp"
@@ -39,7 +35,7 @@ class Helm {
     float wheel_resistance = 0.0f;
     float error_compensation = 0.0f;
   };
-  enum class Chassismode : uint32_t {
+  enum class Chassismode : uint8_t {
     RELAX,
     ROTOR,
     FOLLOW,
@@ -239,15 +235,15 @@ class Helm {
       case static_cast<uint32_t>(Chassismode::INDENPENDENT):
       case static_cast<uint32_t>(
           Chassismode::FOLLOW6020):  // independent  // 6020_follow
-        tmp = sqrtf(cmd_data_.x * cmd_data_.x + cmd_data_.y * cmd_data_.y) *
+        tmp_ = sqrtf(cmd_data_.x * cmd_data_.x + cmd_data_.y * cmd_data_.y) *
               1.41421f / 2.0f;
 
-        tmp = std::clamp(tmp, -1.0f, 1.0f);
+        tmp_ = std::clamp(tmp_, -1.0f, 1.0f);
 
         target_vx_ = 0;
-        target_vy_ = tmp;
-        if (tmp >= 0.1) {
-          direct_offset_ = -(atan2f(cmd_data_.y, cmd_data_.x) - M_PI / 2.0f);
+        target_vy_ = tmp_;
+        if (tmp_ >= 0.1) {
+          direct_offset_ = -(atan2f(cmd_data_.y, cmd_data_.x) - static_cast<float>(M_PI) / 2.0f);
         } else {
           direct_offset_ = 0;
         }
@@ -278,7 +274,7 @@ class Helm {
           Chassismode::INDENPENDENT):  // independent
         /* 独立模式每个轮子的方向相同，wz当作轮子转向角速度 */
         target_omega_ = cmd_data_.z;
-        main_direct_ -= target_omega_ * 6.0 * dt_;  //  6.0为小陀螺转动频率
+        main_direct_ -= target_omega_ * 6.0f * dt_;  //  6.0为小陀螺转动频率
         break;
       case static_cast<uint32_t>(
           Chassismode::FOLLOW6020):  // 6020_follow
@@ -321,10 +317,10 @@ class Helm {
       {
         float x = 0, y = 0, wheel_pos = 0;
         for (int i = 0; i < 4; i++) {
-          wheel_pos = -i * M_PI / 2.0f + M_PI / 4.0f * 3.0f;
+          wheel_pos = -static_cast<float>(i) * static_cast<float>(M_PI) / 2.0f + static_cast<float>(M_PI) / 4.0f * 3.0f;
           x = sinf(wheel_pos) * target_omega_ + target_vx_;
           y = cosf(wheel_pos) * target_omega_ + target_vy_;
-          angle_[i] = -(atan2f(y, x) - M_PI / 2.0f);
+          angle_[i] = -(atan2f(y, x) - static_cast<float>(M_PI) / 2.0f);
           speed_[i] = max_speed_ * sqrtf(x * x + y * y) * 1.41421f / 2.0f;
         }
       } break;
@@ -370,6 +366,9 @@ class Helm {
             motor_reverse_[i] = false;
           }
           break;
+
+          default:
+          break;
       }
     }
     // 输出计算
@@ -384,14 +383,14 @@ class Helm {
                                          zero_[i]),
                 motor_steer_0_->GetAngle(), dt_);
             steer_out_[i] = pid_steer_speed_[i].Calculate(
-                steer_angle_[i], motor_steer_0_->GetRPM() * M_2PI / 60.0f, dt_);
+                steer_angle_[i], motor_steer_0_->GetRPM() * static_cast<float>(M_2PI) / 60.0f, dt_);
           } else {
             wheel_out_[i] = pid_wheel_omega_[i].Calculate(
                 speed_[i], motor_wheel_0_->GetRPM(), dt_);
             steer_angle_[i] = pid_steer_angle_[i].Calculate(
                 angle_[i] + zero_[i], motor_steer_0_->GetAngle(), dt_);
             steer_out_[i] = pid_steer_speed_[i].Calculate(
-                steer_angle_[i], motor_steer_0_->GetRPM() * M_2PI / 60.0f, dt_);
+                steer_angle_[i], motor_steer_0_->GetRPM() * static_cast<float>(M_2PI) / 60.0f, dt_);
           }
           break;
         case 1:
@@ -403,14 +402,14 @@ class Helm {
                                          zero_[i]),
                 motor_steer_1_->GetAngle(), dt_);
             steer_out_[i] = pid_steer_speed_[i].Calculate(
-                steer_angle_[i], motor_steer_1_->GetRPM() * M_2PI / 60.0f, dt_);
+                steer_angle_[i], motor_steer_1_->GetRPM() * static_cast<float>(M_2PI) / 60.0f, dt_);
           } else {
             wheel_out_[i] = pid_wheel_omega_[i].Calculate(
                 speed_[i], motor_wheel_1_->GetRPM(), dt_);
             steer_angle_[i] = pid_steer_angle_[i].Calculate(
                 angle_[i] + zero_[i], motor_steer_1_->GetAngle(), dt_);
             steer_out_[i] = pid_steer_speed_[i].Calculate(
-                steer_angle_[i], motor_steer_1_->GetRPM() * M_2PI / 60.0f, dt_);
+                steer_angle_[i], motor_steer_1_->GetRPM() * static_cast<float>(M_2PI) / 60.0f, dt_);
           }
           break;
         case 2:
@@ -422,14 +421,14 @@ class Helm {
                                          zero_[i]),
                 motor_steer_2_->GetAngle(), dt_);
             steer_out_[i] = pid_steer_speed_[i].Calculate(
-                steer_angle_[i], motor_steer_2_->GetRPM() * M_2PI / 60.0f, dt_);
+                steer_angle_[i], motor_steer_2_->GetRPM() * static_cast<float>(M_2PI) / 60.0f, dt_);
           } else {
             wheel_out_[i] = pid_wheel_omega_[i].Calculate(
                 speed_[i], motor_wheel_2_->GetRPM(), dt_);
             steer_angle_[i] = pid_steer_angle_[i].Calculate(
                 angle_[i] + zero_[i], motor_steer_2_->GetAngle(), dt_);
             steer_out_[i] = pid_steer_speed_[i].Calculate(
-                steer_angle_[i], motor_steer_2_->GetRPM() * M_2PI / 60.0f, dt_);
+                steer_angle_[i], motor_steer_2_->GetRPM() * static_cast<float>(M_2PI) / 60.0f, dt_);
           }
           break;
         case 3:
@@ -441,15 +440,17 @@ class Helm {
                                          zero_[i]),
                 motor_steer_3_->GetAngle(), dt_);
             steer_out_[i] = pid_steer_speed_[i].Calculate(
-                steer_angle_[i], motor_steer_3_->GetRPM() * M_2PI / 60.0f, dt_);
+                steer_angle_[i], motor_steer_3_->GetRPM() * static_cast<float>(M_2PI) / 60.0f, dt_);
           } else {
             wheel_out_[i] = pid_wheel_omega_[i].Calculate(
                 speed_[i], motor_wheel_3_->GetRPM(), dt_);
             steer_angle_[i] = pid_steer_angle_[i].Calculate(
                 angle_[i] + zero_[i], motor_steer_3_->GetAngle(), dt_);
             steer_out_[i] = pid_steer_speed_[i].Calculate(
-                steer_angle_[i], motor_steer_3_->GetRPM() * M_2PI / 60.0f, dt_);
+                steer_angle_[i], motor_steer_3_->GetRPM() * static_cast<float>(M_2PI) / 60.0f, dt_);
           }
+          break;
+        default:
           break;
       }
     }
@@ -469,18 +470,11 @@ class Helm {
  private:
   const ChassisParam PARAM;
 
-  float target_motor_omega_[4]{0.0f, 0.0f, 0.0f, 0.0f};
-  float target_motor_force_[4]{0.0f, 0.0f, 0.0f, 0.0f};
-
-  float now_vx_ = 0.0f;
-  float now_vy_ = 0.0f;
-  float now_omega_ = 0.0f;
-
   float target_vx_ = 0.0f;
   float target_vy_ = 0.0f;
   float target_omega_ = 0.0f;
 
-  float tmp = 0.0f;
+  float tmp_ = 0.0f;
   float wz_dir_mult_ = 1.0f; /* 小陀螺模式旋转方向乘数 */
   bool motor_reverse_[4]{false, false, false, false};
   LibXR::CycleValue<float> zero_[4] = {3.22642668, 2.09004819, 2.5839184,

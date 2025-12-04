@@ -36,7 +36,7 @@ class Omni {
     float wheel_resistance = 0.0f;    // 轮子阻力
     float error_compensation = 0.0f;  // 误差补偿
   };
-  enum class Chassismode : uint32_t {
+  enum class Chassismode : uint8_t {
     RELAX,
     ROTOR,
     FOLLOW_GIMBAL_INTERSECT,

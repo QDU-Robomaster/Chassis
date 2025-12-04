@@ -37,7 +37,7 @@ class Mecanum {
     float wheel_resistance = 0.0f;
     float error_compensation = 0.0f;
   };
- enum class Chassismode : uint32_t {
+ enum class Chassismode : uint8_t {
     RELAX,
     ROTOR,
     FOLLOW_GIMBAL_INTERSECT,
