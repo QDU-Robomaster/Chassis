@@ -65,12 +65,12 @@ jobs:
           repository: QDU-Robomaster/CMD
           path: Modules/CMD
 
-      -name : Checkout PowerControl module
-       uses: actions/checkout@v4
-       with:
-         repository: QDU-Robomaster/PowerControl
-         path: Modules/PowerControl
-
+      - name: Checkout PowerControl module
+        uses: actions/checkout@v4
+        with:
+          repository: QDU-Robomaster/PowerControl
+          path: Modules/PowerControl
+          
       - name: Setup Python & Install deps
         run: |
           python3 -m pip install --upgrade pip
