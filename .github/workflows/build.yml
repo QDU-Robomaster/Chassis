@@ -51,6 +51,12 @@ jobs:
         with:
           repository: QDU-Robomaster/PowerControl
           path: bsp-dev-c/Modules/PowerControl
+      - name: Checkout SuperPower module
+        uses: actions/checkout@v4
+        with:
+          repository: QDU-Robomaster/SuperPower
+          path: bsp-dev-c/Modules/SuperPower
+          
       - name: Checkout Matrix module
         uses: actions/checkout@v4
         with:
