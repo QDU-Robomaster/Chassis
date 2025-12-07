@@ -17,13 +17,16 @@ depends: []
 
 #include "CMD.hpp"
 #include "Chassis.hpp"
+#include "PowerControl.hpp"
 #include "RMMotor.hpp"
 #include "app_framework.hpp"
 #include "event.hpp"
+#include "libxr_def.hpp"
 #include "libxr_time.hpp"
 #include "message.hpp"
 #include "pid.hpp"
 #include "thread.hpp"
+
 
 #define MOTOR_MAX_OMEGA 52 /* 电机输出轴最大角速度 */
 
@@ -40,6 +43,13 @@ class MyOmni {
     float wheel_resistance = 0.0f;
     float error_compensation = 0.0f;
   };
+  struct MotorData {
+    float output_current[4] = {0.0f, 0.0f, 0.0f, 0.0f};
+    float rotorspeed_rpm[4] = {0.0f, 0.0f, 0.0f, 0.0f};
+    float target_motor_omega_[4] = {0.0f, 0.0f, 0.0f, 0.0f};
+    float current_motor_omega_[4] = {0.0f, 0.0f, 0.0f, 0.0f};
+  };
+
   /*
   5  8
   7  1
@@ -72,7 +82,8 @@ class MyOmni {
                          pid_motor_omega_2, pid_motor_omega_3},
         pid_steer_angle_{pid_steer_angle_0, pid_steer_angle_1,
                          pid_steer_angle_2, pid_steer_angle_3},
-        cmd_(cmd) {
+        cmd_(cmd),
+        topic_motor_data_("motor_data", sizeof(motor_data_)) {
     UNUSED(hw);
     UNUSED(app);
     UNUSED(motor_steer_0);
@@ -97,10 +108,12 @@ class MyOmni {
   static void ThreadFunction(MyOmni *myomni) {
     myomni->mutex_.Lock();
 
-    // auto last_time = LibXR::Timebase::GetMilliseconds();
     LibXR::Topic::ASyncSubscriber<CMD::ChassisCMD> cmd_suber("chassis_cmd");
+    LibXR::Topic::ASyncSubscriber<PowerControlData> powercontrol_data_suber(
+        "powercontrol_data");
 
     cmd_suber.StartWaiting();
+    powercontrol_data_suber.StartWaiting();
 
     myomni->mutex_.Unlock();
 
@@ -109,16 +122,25 @@ class MyOmni {
         myomni->cmd_data_ = cmd_suber.GetData();
         cmd_suber.StartWaiting();
       }
+      if (powercontrol_data_suber.Available()) {
+        auto power_data = powercontrol_data_suber.GetData();
 
+        LibXR::Memory::FastCopy(myomni->new_output_current_,
+                                power_data.new_output_current,
+                                sizeof(myomni->new_output_current_));
+        myomni->is_power_limited_ = power_data.enable;
+
+        powercontrol_data_suber.StartWaiting();
+      }
       myomni->mutex_.Lock();
       myomni->Update();
       myomni->UpdateCMD();
       myomni->SelfResolution();
       myomni->InverseKinematicsSolution();
       myomni->DynamicInverseSolution();
+      myomni->topic_motor_data_.Publish(myomni->motor_data_);
       myomni->mutex_.Unlock();
       myomni->OutputToDynamics();
-      // myomni->OutputPowerLimit(80.0f);
       myomni->thread_.Sleep(2);
     }
   }
@@ -133,10 +155,25 @@ class MyOmni {
     motor_wheel_1_->Update();
     motor_wheel_2_->Update();
     motor_wheel_3_->Update();
-    speed_rpm_[0] = motor_wheel_0_->GetRPM();
-    speed_rpm_[1] = motor_wheel_1_->GetRPM();
-    speed_rpm_[2] = motor_wheel_2_->GetRPM();
-    speed_rpm_[3] = motor_wheel_3_->GetRPM();
+    /*给功率控制的数据*/
+    motor_data_.rotorspeed_rpm[0] = motor_wheel_0_->GetRPM();
+    motor_data_.rotorspeed_rpm[1] = motor_wheel_1_->GetRPM();
+    motor_data_.rotorspeed_rpm[2] = motor_wheel_2_->GetRPM();
+    motor_data_.rotorspeed_rpm[3] = motor_wheel_3_->GetRPM();
+
+    motor_data_.current_motor_omega_[0] =
+        motor_wheel_0_->GetOmega() / PARAM.reductionratio;
+    motor_data_.current_motor_omega_[1] =
+        motor_wheel_1_->GetOmega() / PARAM.reductionratio;
+    motor_data_.current_motor_omega_[2] =
+        motor_wheel_2_->GetOmega() / PARAM.reductionratio;
+    motor_data_.current_motor_omega_[3] =
+        motor_wheel_3_->GetOmega() / PARAM.reductionratio;
+
+    motor_data_.target_motor_omega_[0] = target_motor_omega_[0];
+    motor_data_.target_motor_omega_[1] = target_motor_omega_[1];
+    motor_data_.target_motor_omega_[2] = target_motor_omega_[2];
+    motor_data_.target_motor_omega_[3] = target_motor_omega_[3];
   }
 
   void SetMode(uint32_t mode) {
@@ -149,9 +186,9 @@ class MyOmni {
     const float SQRT2 = 1.41421356237f;
 
     target_vy_ =
-        cmd_data_.y * MOTOR_MAX_OMEGA * this->PARAM.wheel_radius * SQRT2;
-    target_vx_ =
         cmd_data_.x * MOTOR_MAX_OMEGA * this->PARAM.wheel_radius * SQRT2;
+    target_vx_ =
+        -cmd_data_.y * MOTOR_MAX_OMEGA * this->PARAM.wheel_radius * SQRT2;
     target_omega_ =
         -cmd_data_.z * MOTOR_MAX_OMEGA * this->PARAM.wheel_to_center * SQRT2;
   }
@@ -163,37 +200,42 @@ class MyOmni {
     motor_wheel_3_->Relax();
   }
 
-  // 正解算 得到底盘速度
   void SelfResolution() {
     const float SQRT2 = 1.41421356237f;
 
-    now_vx_ = (-motor_wheel_0_->GetOmega() - motor_wheel_1_->GetOmega() +
-               motor_wheel_2_->GetOmega() + motor_wheel_3_->GetOmega()) *
+    now_vx_ = (-motor_wheel_0_->GetOmega() / PARAM.reductionratio -
+               motor_wheel_1_->GetOmega() / PARAM.reductionratio +
+               motor_wheel_2_->GetOmega() / PARAM.reductionratio +
+               motor_wheel_3_->GetOmega() / PARAM.reductionratio) *
               SQRT2 * PARAM.wheel_radius / 4.0f;
 
-    now_vy_ = (motor_wheel_0_->GetOmega() - motor_wheel_1_->GetOmega() -
-               motor_wheel_2_->GetOmega() + motor_wheel_3_->GetOmega()) *
+    now_vy_ = (motor_wheel_0_->GetOmega() / PARAM.reductionratio -
+               motor_wheel_1_->GetOmega() / PARAM.reductionratio -
+               motor_wheel_2_->GetOmega() / PARAM.reductionratio +
+               motor_wheel_3_->GetOmega() / PARAM.reductionratio) *
               SQRT2 * PARAM.wheel_radius / 4.0f;
 
-    now_omega_ = (motor_wheel_0_->GetOmega() + motor_wheel_1_->GetOmega() +
-                  motor_wheel_2_->GetOmega() + motor_wheel_3_->GetOmega()) *
+    now_omega_ = (motor_wheel_0_->GetOmega() / PARAM.reductionratio +
+                  motor_wheel_1_->GetOmega() / PARAM.reductionratio +
+                  motor_wheel_2_->GetOmega() / PARAM.reductionratio +
+                  motor_wheel_3_->GetOmega() / PARAM.reductionratio) *
                  SQRT2 * PARAM.wheel_radius / (4.0f * PARAM.wheel_to_center);
   }
 
-  // 底盘逆解算
   void InverseKinematicsSolution() {
-    target_motor_omega_[0] =
-        (-target_vx_ + target_vy_ + target_omega_ * PARAM.wheel_to_center) /
-        PARAM.wheel_radius;
-    target_motor_omega_[1] =
-        (-target_vx_ - target_vy_ + target_omega_ * PARAM.wheel_to_center) /
-        PARAM.wheel_radius;
-    target_motor_omega_[2] =
-        (target_vx_ - target_vy_ + target_omega_ * PARAM.wheel_to_center) /
-        PARAM.wheel_radius;
-    target_motor_omega_[3] =
-        (target_vx_ + target_vy_ + target_omega_ * PARAM.wheel_to_center) /
-        PARAM.wheel_radius;
+    const float SQRT1 = 0.70710678118f;
+    target_motor_omega_[0] = (-target_vx_ * SQRT1 + target_vy_ * SQRT1 +
+                              target_omega_ * PARAM.wheel_to_center) /
+                             PARAM.wheel_radius;
+    target_motor_omega_[1] = (-target_vx_ * SQRT1 - target_vy_ * SQRT1 +
+                              target_omega_ * PARAM.wheel_to_center) /
+                             PARAM.wheel_radius;
+    target_motor_omega_[2] = (target_vx_ * SQRT1 - target_vy_ * SQRT1 +
+                              target_omega_ * PARAM.wheel_to_center) /
+                             PARAM.wheel_radius;
+    target_motor_omega_[3] = (target_vx_ * SQRT1 + target_vy_ * SQRT1 +
+                              target_omega_ * PARAM.wheel_to_center) /
+                             PARAM.wheel_radius;
   }
 
   void DynamicInverseSolution() {
@@ -215,52 +257,40 @@ class MyOmni {
          torque * PARAM.wheel_to_center / 4 / PARAM.wheel_radius);
   }
 
-  void OutputPowerLimit(float power_limit) {
-    if (power_limit < 0.0f) {
-      return;
-    }
-    chassis_power_ = 0.0f;
-    text_1_ = 0.0f;
-    text_2_ = 0.0f;
-    text_3_ = 0.0f;
-    for (int i = 0; i < 4; i++) {
-      text_1_ += torque_coeff_ * output_current_[i] * speed_rpm_[i];
-      text_2_ += speed_2_coeff_ * speed_rpm_[i] * speed_rpm_[i];
-      text_3_ += out_2_coeff_ * output_current_[i] * output_current_[i];
-
-      motor_power_[i] = torque_coeff_ * output_current_[i] * speed_rpm_[i] +
-                        speed_2_coeff_ * speed_rpm_[i] * speed_rpm_[i] +
-                        out_2_coeff_ * output_current_[i] * output_current_[i] +
-                        const_coeff_;
-      chassis_power_ += motor_power_[i];
-    }
-
-    if (chassis_power_ > power_limit) {
-      float limit_ratio = power_limit / chassis_power_;
-      for (int i = 0; i < 4; i++) {
-        output_[i] *= limit_ratio;
-      }
-    }
-  }
-
   void OutputToDynamics() {
     target_motor_current_[0] = pid_motor_omega_[0].Calculate(
-        target_motor_omega_[0], motor_wheel_0_->GetOmega(), dt_);
+        target_motor_omega_[0],
+        motor_wheel_0_->GetOmega() / PARAM.reductionratio, dt_);
 
     target_motor_current_[1] = pid_motor_omega_[1].Calculate(
-        target_motor_omega_[1], motor_wheel_1_->GetOmega(), dt_);
+        target_motor_omega_[1],
+        motor_wheel_1_->GetOmega() / PARAM.reductionratio, dt_);
 
     target_motor_current_[2] = pid_motor_omega_[2].Calculate(
-        target_motor_omega_[2], motor_wheel_2_->GetOmega(), dt_);
+        target_motor_omega_[2],
+        motor_wheel_2_->GetOmega() / PARAM.reductionratio, dt_);
 
     target_motor_current_[3] = pid_motor_omega_[3].Calculate(
-        target_motor_omega_[3], motor_wheel_3_->GetOmega(), dt_);
+        target_motor_omega_[3],
+        motor_wheel_3_->GetOmega() / PARAM.reductionratio, dt_);
 
     for (int i = 0; i < 4; i++) {
       output_[i] = (target_motor_current_[i] +
                     target_motor_force_[i] * PARAM.wheel_radius);
 
-      output_current_[i] = output_[i] * 2730;
+      motor_data_.output_current[i] =
+          output_[i] *
+          (motor_wheel_0_->GetLSB() / PARAM.reductionratio /
+           motor_wheel_0_->KGetTorque() / motor_wheel_0_->GetCurrentMAX());
+    }
+
+    if (is_power_limited_) {
+      for (int i = 0; i < 4; i++) {
+        output_[i] =
+            new_output_current_[i] /
+            (motor_wheel_0_->GetLSB() / PARAM.reductionratio /
+             motor_wheel_0_->KGetTorque() / motor_wheel_0_->GetCurrentMAX());
+      }
     }
 
     motor_wheel_0_->TorqueControl(output_[0], PARAM.reductionratio);
@@ -275,12 +305,10 @@ class MyOmni {
   float target_motor_omega_[4] = {0.0f, 0.0f, 0.0f, 0.0f};
   float target_motor_current_[4] = {0.0f, 0.0f, 0.0f, 0.0f};
   float target_motor_force_[4] = {0.0f, 0.0f, 0.0f, 0.0f};
-  float motor_power_[4] = {0.0f, 0.0f, 0.0f, 0.0f};
-  float chassis_power_ = 0.0f;
 
   float output_[4] = {0.0f, 0.0f, 0.0f, 0.0f};
-  float output_current_[4] = {0.0f, 0.0f, 0.0f, 0.0f};
-  float speed_rpm_[4] = {0.0f, 0.0f, 0.0f, 0.0f};
+  float new_output_current_[4] = {0.0f, 0.0f, 0.0f, 0.0f};
+  bool is_power_limited_ = false;
 
   float now_vx_ = 0.0f;
   float now_vy_ = 0.0f;
@@ -298,15 +326,9 @@ class MyOmni {
   RMMotor *motor_wheel_2_;
   RMMotor *motor_wheel_3_;
 
-  float text_1_;
-  float text_2_;
-  float text_3_;
-
   LibXR::PID<float> pid_velocity_x_;
   LibXR::PID<float> pid_velocity_y_;
   LibXR::PID<float> pid_omega_;
-
-  //   LibXR::PID<float> pid_motor_omega_[4]{0.0f, 0.0f, 0.0f, 0.0f};
 
   LibXR::PID<float> pid_motor_omega_[4] = {
       LibXR::PID<float>(LibXR::PID<float>::Param()),
@@ -322,11 +344,9 @@ class MyOmni {
   CMD *cmd_;
   LibXR::Thread thread_;
   LibXR::Mutex mutex_;  // 互斥量
+  LibXR::Topic topic_motor_data_;
 
-  float torque_coeff_ = 1.996000e-06f;
-  float speed_2_coeff_ = 9.0772349874e-07f;
-  float out_2_coeff_ = 3.1993429496e-01f;
-  float const_coeff_ = 2.3226238653f;
+  MotorData motor_data_;
 
   CMD::ChassisCMD cmd_data_;
   uint32_t chassis_event_ = 0;

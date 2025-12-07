@@ -131,6 +131,7 @@ depends:
 #include "Mecanum.hpp"
 #include "Omni.hpp"
 #include "RMMotor.hpp"
+#include "MyOmni.hpp"
 #include "app_framework.hpp"
 #include "libxr_def.hpp"
 #include "pid.hpp"
@@ -154,6 +155,7 @@ class Chassis : public LibXR::Application {
     float wheel_resistance = 0.0f;
     float error_compensation = 0.0f;
   };
+typedef typename ChassisType:: MotorData MotorData;
 
   Chassis(LibXR::HardwareContainer &hw, LibXR::ApplicationManager &app,
           RMMotor *motor_wheel_0, RMMotor *motor_wheel_1,
@@ -195,14 +197,13 @@ class Chassis : public LibXR::Application {
           chassis->EventHandler(event_id);
         },
         this);
-    chassis_event_.Register(static_cast<uint32_t>(ChassisEvent::SET_MODE_RELAX),
-                            callback);
-    chassis_event_.Register(
-        static_cast<uint32_t>(ChassisEvent::SET_MODE_FOLLOW), callback);
-    chassis_event_.Register(static_cast<uint32_t>(ChassisEvent::SET_MODE_ROTOR),
-                            callback);
-    chassis_event_.Register(
-        static_cast<uint32_t>(ChassisEvent::SET_MODE_INDENPENDENT), callback);
+    chassis_event_.Register(static_cast<uint32_t>(ChassisEvent::SET_MODE_RELAX),callback);
+
+    chassis_event_.Register(static_cast<uint32_t>(ChassisEvent::SET_MODE_FOLLOW), callback);
+
+    chassis_event_.Register(static_cast<uint32_t>(ChassisEvent::SET_MODE_ROTOR),callback);
+
+    chassis_event_.Register(static_cast<uint32_t>(ChassisEvent::SET_MODE_INDENPENDENT), callback);
   }
 
   /**
