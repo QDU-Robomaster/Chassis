@@ -131,7 +131,6 @@ depends:
 #include "Mecanum.hpp"
 #include "Omni.hpp"
 #include "RMMotor.hpp"
-#include "MyOmni.hpp"
 #include "app_framework.hpp"
 #include "libxr_def.hpp"
 #include "pid.hpp"
