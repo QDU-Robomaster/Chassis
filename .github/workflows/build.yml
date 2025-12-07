@@ -27,7 +27,7 @@ jobs:
           path: bsp-dev-c
 
       - name: config libxr
-        run: cd bsp-dev-c && xr_cube_cfg -d ./ --xrobot
+        run: cd bsp-dev-c && xr_cubemx_cfg -d ./ --xrobot
 
       - name: Checkout current module repo to bsp-dev-c/Modules/${{ env.XR_MODULE_NAME }}
         uses: actions/checkout@v4
