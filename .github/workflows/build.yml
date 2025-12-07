@@ -65,11 +65,17 @@ jobs:
           repository: QDU-Robomaster/CMD
           path: Modules/CMD
 
-      -name : Checkout PowerControl module
-       uses: actions/checkout@v4
-       with:
+      - name: Checkout PowerControl module
+        uses: actions/checkout@v4
+        with:
          repository: QDU-Robomaster/PowerControl
          path: Modules/PowerControl
+
+      - name: Checkout Matrix module
+        uses: actions/checkout@v4
+        with:
+          repository: QDU-Robomaster/Matrix
+          path: Modules/Matrix
 
       - name: Setup Python & Install deps
         run: |
@@ -104,6 +110,7 @@ jobs:
           xrobot_add_mod RMMotor --instance-id motor_steer_2
           xrobot_add_mod RMMotor --instance-id motor_steer_3
           xrobot_add_mod PowerControl --instance-id power_control
+          xrobot_add_mod Matrix --instance-id matrix
           xrobot_add_mod CMD --instance-id cmd
 
       - name: Add this repo module
