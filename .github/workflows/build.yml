@@ -51,6 +51,11 @@ jobs:
         with:
           repository: QDU-Robomaster/PowerControl
           path: bsp-dev-c/Modules/PowerControl
+      - name: Checkout Matrix module
+        uses: actions/checkout@v4
+        with:
+          repository: QDU-Robomaster/Matrix
+          path: bsp-dev-c/Modules/Matrix
 
       - name: Add modules
         run: |
