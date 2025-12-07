@@ -56,7 +56,7 @@ jobs:
         with:
           repository: QDU-Robomaster/SuperPower
           path: bsp-dev-c/Modules/SuperPower
-          
+
       - name: Checkout Matrix module
         uses: actions/checkout@v4
         with:
@@ -74,8 +74,10 @@ jobs:
           xrobot_add_mod RMMotor --instance-id motor_steer_1
           xrobot_add_mod RMMotor --instance-id motor_steer_2
           xrobot_add_mod RMMotor --instance-id motor_steer_3
+          xrobot_add_mod SuperPower --instance-id super_power
           xrobot_add_mod PowerControl --instance-id power_control
           xrobot_add_mod CMD --instance-id cmd
+          xrobot_add_mod Chassis --instance-id omni_chassis
 
       - name: Add this repo module
         run: |
