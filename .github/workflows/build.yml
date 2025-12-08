@@ -51,6 +51,7 @@ jobs:
         with:
           repository: QDU-Robomaster/PowerControl
           path: bsp-dev-c/Modules/PowerControl
+          
       - name: Checkout SuperPower module
         uses: actions/checkout@v4
         with:
@@ -66,6 +67,7 @@ jobs:
       - name: Add modules
         run: |
           cd bsp-dev-c
+          rm -rf ./User/xrobot.yaml
           xrobot_add_mod RMMotor --instance-id motor_wheel_0
           xrobot_add_mod RMMotor --instance-id motor_wheel_1
           xrobot_add_mod RMMotor --instance-id motor_wheel_2
@@ -74,12 +76,15 @@ jobs:
           xrobot_add_mod RMMotor --instance-id motor_steer_1
           xrobot_add_mod RMMotor --instance-id motor_steer_2
           xrobot_add_mod RMMotor --instance-id motor_steer_3
+          xrobot_add_mod CMD --instance-id cmd
           xrobot_add_mod SuperPower --instance-id super_power
-          xrobot_add_mod Chassis --instance-id omni_chassis
           xrobot_add_mod PowerControl --instance-id power_control
+          xrobot_add_mod Chassis --instance-id omni_chassis
+          cat ./User/xrobot.yaml
 
       - name: xrobot generate code
-        run: cd bsp-dev-c && xrobot_gen_main
+        run: cd bsp-dev-c && xrobot_gen_main && cat ./User/xrobot_main.hpp
+
 
       - name: config cmake
         run: cd bsp-dev-c && export GCC_TOOLCHAIN_ROOT=/opt/arm-gnu-toolchain-14.2.rel1-x86_64-arm-none-eabi/bin && export CLANG_GCC_CMSIS_COMPILER=/opt/st-arm-clang && cmake . -DCMAKE_TOOLCHAIN_FILE:STRING=cmake/starm-clang.cmake -DCMAKE_EXPORT_COMPILE_COMMANDS:BOOL=TRUE -Bbuild -G Ninja
