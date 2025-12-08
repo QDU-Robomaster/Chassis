@@ -150,7 +150,7 @@ class Omni {
     omni->mutex_.Lock();
     auto last_time = LibXR::Timebase::GetMilliseconds();
     LibXR::Topic::ASyncSubscriber<CMD::ChassisCMD> cmd_suber("chassis_cmd");
-    LibXR::Topic::ASyncSubscriber<PowerControlData> powercontrol_data_suber("powercontrol_data");
+    LibXR::Topic::ASyncSubscriber<PowerControl<Omni>::PowerControlData> powercontrol_data_suber("powercontrol_data");
 
     cmd_suber.StartWaiting();
     powercontrol_data_suber.StartWaiting();

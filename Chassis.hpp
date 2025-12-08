@@ -134,6 +134,7 @@ depends:
 #include "app_framework.hpp"
 #include "libxr_def.hpp"
 #include "pid.hpp"
+#include "PowerControl.hpp"
 
 enum class ChassisEvent : uint8_t {
   SET_MODE_RELAX,
