@@ -9,6 +9,7 @@ required_hardware: []
 depends: []
 === END MANIFEST === */
 // clang-format on
+#include <cmath>
 #include <cstdint>
 
 #include "CMD.hpp"
@@ -18,6 +19,7 @@ depends: []
 #include "libxr_def.hpp"
 #include "libxr_rw.hpp"
 #include "libxr_time.hpp"
+#include "message.hpp"
 #include "pid.hpp"
 #include "PowerControl.hpp"
 
@@ -149,11 +151,16 @@ class Omni {
   static void ThreadFunction(Omni *omni) {
     omni->mutex_.Lock();
     auto last_time = LibXR::Timebase::GetMilliseconds();
+
     LibXR::Topic::ASyncSubscriber<CMD::ChassisCMD> cmd_suber("chassis_cmd");
     LibXR::Topic::ASyncSubscriber<PowerControl<Omni>::PowerControlData> powercontrol_data_suber("powercontrol_data");
+    LibXR::Topic::ASyncSubscriber<LibXR::EulerAngle<float>> ahrs_euler_suber("ahrs_euler");
+    LibXR::Topic::ASyncSubscriber<Eigen::Matrix<float, 3, 1>> bmi088_gyro_suber("bmi088_gyro");
 
     cmd_suber.StartWaiting();
     powercontrol_data_suber.StartWaiting();
+    ahrs_euler_suber.StartWaiting();
+    bmi088_gyro_suber.StartWaiting();
 
     omni->mutex_.Unlock();
 
@@ -164,13 +171,19 @@ class Omni {
       }
       if (powercontrol_data_suber.Available()) {
         auto power_data = powercontrol_data_suber.GetData();
-
         LibXR::Memory::FastCopy(omni->new_output_current_,
                                 power_data.new_output_current,
                                 sizeof(omni->new_output_current_));
         omni->is_power_limited_ = power_data.enable;
-
         powercontrol_data_suber.StartWaiting();
+      }
+      if(ahrs_euler_suber.Available()){
+        omni->euler_ = ahrs_euler_suber.GetData();
+        ahrs_euler_suber.StartWaiting();
+      }
+      if(bmi088_gyro_suber.Available()){
+        omni->gyro_ = bmi088_gyro_suber.GetData();
+        bmi088_gyro_suber.StartWaiting();
       }
 
       omni->mutex_.Lock();
@@ -180,7 +193,8 @@ class Omni {
       omni->SelfResolution();
       omni->InverseKinematicsSolution();
       omni->DynamicInverseSolution();
-      omni->topic_motor_data_.Publish(omni->motor_data_);
+      omni->DetectSlip();
+     // omni->topic_motor_data_.Publish(omni->motor_data_);
       omni->mutex_.Unlock();
       omni->OutputToDynamics();
       omni->thread_.SleepUntil(last_time, 2);
@@ -259,15 +273,13 @@ class Omni {
       case static_cast<uint32_t>(Chassismode::FOLLOW_GIMBAL_CROSS):
       break;
       case static_cast<uint32_t>(Chassismode::INDENPENDENT):
-          target_vx_ = cmd_data_.y * MOTOR_MAX_OMEGA *  this->PARAM.wheel_radius * SQRT2;
-          target_vy_ = cmd_data_.x * MOTOR_MAX_OMEGA *  this->PARAM.wheel_radius * SQRT2;
+          target_vx_ = cmd_data_.x * MOTOR_MAX_OMEGA *  this->PARAM.wheel_radius * SQRT2;
+          target_vy_ = cmd_data_.y * MOTOR_MAX_OMEGA *  this->PARAM.wheel_radius * SQRT2;
           target_omega_ = -cmd_data_.z * MOTOR_MAX_OMEGA * this->PARAM.wheel_to_center * SQRT2;
         break;
       default:
         break;
-
     }
-
   }
 
   /**
@@ -314,6 +326,40 @@ class Omni {
     target_motor_omega_[3] = (SQRT1 * target_vx_ + SQRT1 * target_vy_ +
                               target_omega_ * PARAM.wheel_to_center) /
                              PARAM.wheel_radius;
+  }
+
+  void DetectSlip() {
+   // TODO:云台角速度补偿
+    const float GYRO_BIAS_ALPHA = 0.01f;  // 偏置估计时常数（慢）
+
+    gyro_bias_x_ = (1.0f - GYRO_BIAS_ALPHA) * gyro_bias_x_ + GYRO_BIAS_ALPHA * gyro_.x();
+
+    float gx = gyro_.x() - gyro_bias_x_;
+    float diff = std::fabs(gx - now_omega_);
+
+    if(diff > 0.5f ) {
+      slip_detect_count_++;
+      slip_clear_count_ = 0;
+      if(slip_detect_count_ >= SLIP_DETECT_CONFIRM) {
+        is_slip_detected_chassis_ = true;
+        slip_detect_count_ = SLIP_DETECT_CONFIRM; // 防止溢出
+      }
+    } else {
+      slip_clear_count_++;
+      slip_detect_count_ = 0;
+      if(slip_clear_count_ >= SLIP_CLEAR_CONFIRM) {
+        is_slip_detected_chassis_ = false;
+        slip_clear_count_ = SLIP_CLEAR_CONFIRM; // 防止溢出
+      }
+    }
+
+    for(int i =0; i <4; i++) {
+    if(motor_data_.current_motor_omega_[i] - motor_data_.target_motor_omega_[i] > 20.0f) {
+      is_slip_detected_wheel_[i] = true;
+    } else {
+      is_slip_detected_wheel_[i] = false;
+    }
+  }
   }
 
   /**
@@ -379,12 +425,18 @@ class Omni {
            motor_wheel_0_->KGetTorque() / motor_wheel_0_->GetCurrentMAX());
     }
 
-    if (is_power_limited_) {
+    // if (is_power_limited_) {
+    //   for (int i = 0; i < 4; i++) {
+    //     output_[i] =
+    //         new_output_current_[i] /
+    //         (motor_wheel_0_->GetLSB() / PARAM.reductionratio /
+    //          motor_wheel_0_->KGetTorque() / motor_wheel_0_->GetCurrentMAX());
+    //   }
+    // }
+
+    if (is_slip_detected_chassis_) {
       for (int i = 0; i < 4; i++) {
-        output_[i] =
-            new_output_current_[i] /
-            (motor_wheel_0_->GetLSB() / PARAM.reductionratio /
-             motor_wheel_0_->KGetTorque() / motor_wheel_0_->GetCurrentMAX());
+        output_[i] *= slip_scale_factor_;  // 打滑时将输出电流减半
       }
     }
 
@@ -475,6 +527,9 @@ class Omni {
  private:
   const ChassisParam PARAM;
 
+  LibXR::EulerAngle<float> euler_;
+  Eigen::Matrix<float, 3, 1> gyro_;
+
   float target_motor_omega_[4]{0.0f, 0.0f, 0.0f, 0.0f};
   float target_motor_force_[4]{0.0f, 0.0f, 0.0f, 0.0f};
   float target_motor_current_[4]{0.0f, 0.0f, 0.0f, 0.0f};
@@ -482,10 +537,20 @@ class Omni {
   float output_[4]{0.0f, 0.0f, 0.0f, 0.0f};
   float new_output_current_[4] = {0.0f, 0.0f, 0.0f, 0.0f};
   bool is_power_limited_ = false;
+  bool is_slip_detected_chassis_ = false;
+  bool is_slip_detected_wheel_[4] = {false, false, false, false};
+
+  int32_t slip_detect_count_ = 0;
+  int32_t slip_clear_count_ = 0;
+  const int SLIP_DETECT_CONFIRM = 3;//连续触发三次认为打滑
+  const int SLIP_CLEAR_CONFIRM = 5; //连续五次未触发认为打滑结束
+  float slip_scale_factor_ = 0.6f;
 
   float now_vx_ = 0.0f;
   float now_vy_ = 0.0f;
   float now_omega_ = 0.0f;
+
+  float gyro_bias_x_ = 0.0f; // 角速度计偏置估计值
 
   float target_vx_ = 0.0f;
   float target_vy_ = 0.0f;
