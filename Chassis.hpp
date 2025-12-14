@@ -141,7 +141,7 @@ enum class ChassisEvent : uint8_t {
   SET_MODE_FOLLOW,
   SET_MODE_ROTOR,
   SET_MODE_6020_FOLLOW,
-  SET_MODE_INDENPENDENT,
+  SET_MODE_INDEPENDENT,
 };
 
 template <typename ChassisType>
@@ -203,7 +203,7 @@ typedef typename ChassisType:: MotorData MotorData;
 
     chassis_event_.Register(static_cast<uint32_t>(ChassisEvent::SET_MODE_ROTOR),callback);
 
-    chassis_event_.Register(static_cast<uint32_t>(ChassisEvent::SET_MODE_INDENPENDENT), callback);
+    chassis_event_.Register(static_cast<uint32_t>(ChassisEvent::SET_MODE_INDEPENDENT), callback);
   }
 
   /**
