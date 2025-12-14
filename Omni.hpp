@@ -31,10 +31,15 @@ class Chassis;
 class Omni {
  public:
   struct MotorData {
-    float output_current[4] = {0.0f, 0.0f, 0.0f, 0.0f};
-    float rotorspeed_rpm[4] = {0.0f, 0.0f, 0.0f, 0.0f};
-    float target_motor_omega_[4] = {0.0f, 0.0f, 0.0f, 0.0f};
-    float current_motor_omega_[4] = {0.0f, 0.0f, 0.0f, 0.0f};
+    float output_current_3508[4] = {0.0f, 0.0f, 0.0f, 0.0f};
+    float rotorspeed_rpm_3508[4] = {0.0f, 0.0f, 0.0f, 0.0f};
+    float target_motor_omega_3508[4] = {0.0f, 0.0f, 0.0f, 0.0f};
+    float current_motor_omega_3508[4] = {0.0f, 0.0f, 0.0f, 0.0f};
+
+    float output_current_6020[4] = {0.0f, 0.0f, 0.0f, 0.0f};
+    float rotorspeed_rpm_6020[4] = {0.0f, 0.0f, 0.0f, 0.0f};
+    float target_motor_omega_6020[4] = {0.0f, 0.0f, 0.0f, 0.0f};
+    float current_motor_omega_6020[4] = {0.0f, 0.0f, 0.0f, 0.0f};
   };
   struct ChassisParam {
     float wheel_radius = 0.0f;
@@ -170,11 +175,11 @@ class Omni {
         cmd_suber.StartWaiting();
       }
       if (powercontrol_data_suber.Available()) {
-        auto power_data = powercontrol_data_suber.GetData();
+        auto powercontrol_data = powercontrol_data_suber.GetData();
         LibXR::Memory::FastCopy(omni->new_output_current_,
-                                power_data.new_output_current,
+                                powercontrol_data.new_output_current_3508,
                                 sizeof(omni->new_output_current_));
-        omni->is_power_limited_ = power_data.enable;
+        omni->is_power_limited_ = powercontrol_data.enable;
         powercontrol_data_suber.StartWaiting();
       }
       if(ahrs_euler_suber.Available()){
@@ -216,24 +221,24 @@ class Omni {
     motor_wheel_3_->Update();
 
     /*给功率控制的数据*/
-    motor_data_.rotorspeed_rpm[0] = motor_wheel_0_->GetRPM();
-    motor_data_.rotorspeed_rpm[1] = motor_wheel_1_->GetRPM();
-    motor_data_.rotorspeed_rpm[2] = motor_wheel_2_->GetRPM();
-    motor_data_.rotorspeed_rpm[3] = motor_wheel_3_->GetRPM();
+    motor_data_.rotorspeed_rpm_3508[0] = motor_wheel_0_->GetRPM();
+    motor_data_.rotorspeed_rpm_3508[1] = motor_wheel_1_->GetRPM();
+    motor_data_.rotorspeed_rpm_3508[2] = motor_wheel_2_->GetRPM();
+    motor_data_.rotorspeed_rpm_3508[3] = motor_wheel_3_->GetRPM();
 
-    motor_data_.current_motor_omega_[0] =
+    motor_data_.current_motor_omega_3508[0] =
         motor_wheel_0_->GetOmega() / PARAM.reductionratio;
-    motor_data_.current_motor_omega_[1] =
+    motor_data_.current_motor_omega_3508[1] =
         motor_wheel_1_->GetOmega() / PARAM.reductionratio;
-    motor_data_.current_motor_omega_[2] =
+    motor_data_.current_motor_omega_3508[2] =
         motor_wheel_2_->GetOmega() / PARAM.reductionratio;
-    motor_data_.current_motor_omega_[3] =
+    motor_data_.current_motor_omega_3508[3] =
         motor_wheel_3_->GetOmega() / PARAM.reductionratio;
 
-    motor_data_.target_motor_omega_[0] = target_motor_omega_[0];
-    motor_data_.target_motor_omega_[1] = target_motor_omega_[1];
-    motor_data_.target_motor_omega_[2] = target_motor_omega_[2];
-    motor_data_.target_motor_omega_[3] = target_motor_omega_[3];
+    motor_data_.target_motor_omega_3508[0] = target_motor_omega_[0];
+    motor_data_.target_motor_omega_3508[1] = target_motor_omega_[1];
+    motor_data_.target_motor_omega_3508[2] = target_motor_omega_[2];
+    motor_data_.target_motor_omega_3508[3] = target_motor_omega_[3];
   }
 
   /**
@@ -354,7 +359,7 @@ class Omni {
     }
 
     for(int i =0; i <4; i++) {
-    if(motor_data_.current_motor_omega_[i] - motor_data_.target_motor_omega_[i] > 20.0f) {
+    if(motor_data_.current_motor_omega_3508[i] - motor_data_.target_motor_omega_3508[i] > 20.0f) {
       is_slip_detected_wheel_[i] = true;
     } else {
       is_slip_detected_wheel_[i] = false;
@@ -419,7 +424,7 @@ class Omni {
       output_[i] = (target_motor_current_[i] +
                     target_motor_force_[i] * PARAM.wheel_radius);
 
-      motor_data_.output_current[i] =
+      motor_data_.output_current_3508[i] =
           output_[i] *
           (motor_wheel_0_->GetLSB() / PARAM.reductionratio /
            motor_wheel_0_->KGetTorque() / motor_wheel_0_->GetCurrentMAX());

@@ -11,8 +11,10 @@ depends: []
 // clang-format on
 
 #include <math.h>
+
 #include "CMD.hpp"
 #include "Chassis.hpp"
+#include "PowerControl.hpp"
 #include "RMMotor.hpp"
 #include "app_framework.hpp"
 #include "cycle_value.hpp"
@@ -21,6 +23,7 @@ depends: []
 #include "libxr_time.hpp"
 #include "pid.hpp"
 
+
 #define MOTOR_MAX_OMEGA 52 /* 电机输出轴最大角速度 */
 
 template <typename ChassisType>
@@ -28,10 +31,15 @@ class Chassis;
 class Helm {
  public:
   struct MotorData {
-    float output_current[4] = {0.0f, 0.0f, 0.0f, 0.0f};
-    float rotorspeed_rpm[4] = {0.0f, 0.0f, 0.0f, 0.0f};
-    float target_motor_omega_[4] = {0.0f, 0.0f, 0.0f, 0.0f};
-    float current_motor_omega_[4] = {0.0f, 0.0f, 0.0f, 0.0f};
+    float output_current_3508[4] = {0.0f, 0.0f, 0.0f, 0.0f};
+    float rotorspeed_rpm_3508[4] = {0.0f, 0.0f, 0.0f, 0.0f};
+    float target_motor_omega_3508[4] = {0.0f, 0.0f, 0.0f, 0.0f};
+    float current_motor_omega_3508[4] = {0.0f, 0.0f, 0.0f, 0.0f};
+
+    float output_current_6020[4] = {0.0f, 0.0f, 0.0f, 0.0f};
+    float rotorspeed_rpm_6020[4] = {0.0f, 0.0f, 0.0f, 0.0f};
+    float target_motor_omega_6020[4] = {0.0f, 0.0f, 0.0f, 0.0f};
+    float current_motor_omega_6020[4] = {0.0f, 0.0f, 0.0f, 0.0f};
   };
   struct ChassisParam {
     float wheel_radius = 0.0f;
@@ -131,14 +139,17 @@ class Helm {
 
   /**
    * @brief 舵轮底盘控制线程函数
-   * @param omni Omni对象指针
+   * @param helm Helm对象指针
    * @details 控制线程主循环，负责接收控制指令、执行运动学解算和动力学控制输出
    */
   static void ThreadFunction(Helm *helm) {
     helm->mutex_.Lock();
     LibXR::Topic::ASyncSubscriber<CMD::ChassisCMD> cmd_suber("chassis_cmd");
-    cmd_suber.StartWaiting();
+    LibXR::Topic::ASyncSubscriber<PowerControl<Helm>::PowerControlData> powercontrol_data_suber("powercontrol_data");
     LibXR::Topic::ASyncSubscriber<float> current_yaw_suber("chassis_yaw");
+
+    cmd_suber.StartWaiting();
+    powercontrol_data_suber.StartWaiting();
     current_yaw_suber.StartWaiting();
 
     helm->mutex_.Unlock();
@@ -151,6 +162,18 @@ class Helm {
       if (current_yaw_suber.Available()) {
         helm->current_yaw_ = current_yaw_suber.GetData();
         current_yaw_suber.StartWaiting();
+      }
+
+      if (powercontrol_data_suber.Available()) {
+        auto powercontrol_data = powercontrol_data_suber.GetData();
+        LibXR::Memory::FastCopy(helm->new_output_current_3508_,
+                                powercontrol_data.new_output_current_3508,
+                                sizeof(helm->new_output_current_3508_));
+        LibXR::Memory::FastCopy(helm->new_output_current_6020_,
+                                powercontrol_data.new_output_current_6020,
+                                sizeof(helm->new_output_current_6020_));
+        helm->is_power_limited_ = powercontrol_data.enable;
+        powercontrol_data_suber.StartWaiting();
       }
 
       helm->mutex_.Lock();
@@ -180,6 +203,54 @@ class Helm {
     motor_steer_1_->Update();
     motor_steer_2_->Update();
     motor_steer_3_->Update();
+
+    /*给功率控制的数据*/
+    /*3508数据*/
+    motor_data_.rotorspeed_rpm_3508[0] = motor_wheel_0_->GetRPM();
+    motor_data_.rotorspeed_rpm_3508[1] = motor_wheel_1_->GetRPM();
+    motor_data_.rotorspeed_rpm_3508[2] = motor_wheel_2_->GetRPM();
+    motor_data_.rotorspeed_rpm_3508[3] = motor_wheel_3_->GetRPM();
+
+    motor_data_.current_motor_omega_3508[0] =
+        motor_wheel_0_->GetOmega() / PARAM.reductionratio;
+    motor_data_.current_motor_omega_3508[1] =
+        motor_wheel_1_->GetOmega() / PARAM.reductionratio;
+    motor_data_.current_motor_omega_3508[2] =
+        motor_wheel_2_->GetOmega() / PARAM.reductionratio;
+    motor_data_.current_motor_omega_3508[3] =
+        motor_wheel_3_->GetOmega() / PARAM.reductionratio;
+
+    motor_data_.target_motor_omega_3508[0] = speed_[0] / PARAM.reductionratio;
+    motor_data_.target_motor_omega_3508[1] = speed_[1] / PARAM.reductionratio;
+    motor_data_.target_motor_omega_3508[2] = speed_[2] / PARAM.reductionratio;
+    motor_data_.target_motor_omega_3508[3] = speed_[3] / PARAM.reductionratio;
+
+    motor_data_.output_current_3508[0] = wheel_out_[0];
+    motor_data_.output_current_3508[1] = wheel_out_[1];
+    motor_data_.output_current_3508[2] = wheel_out_[2];
+    motor_data_.output_current_3508[3] = wheel_out_[3];
+
+    /*6020数据*/
+    motor_data_.rotorspeed_rpm_6020[0] = motor_steer_0_->GetRPM();
+    motor_data_.rotorspeed_rpm_6020[1] = motor_steer_1_->GetRPM();
+    motor_data_.rotorspeed_rpm_6020[2] = motor_steer_2_->GetRPM();
+    motor_data_.rotorspeed_rpm_6020[3] = motor_steer_3_->GetRPM();
+
+    motor_data_.current_motor_omega_6020[0] = motor_steer_0_->GetOmega();
+    motor_data_.current_motor_omega_6020[1] = motor_steer_1_->GetOmega();
+    motor_data_.current_motor_omega_6020[2] = motor_steer_2_->GetOmega();
+    motor_data_.current_motor_omega_6020[3] = motor_steer_3_->GetOmega();
+
+    motor_data_.target_motor_omega_6020[0] = static_cast<float>(steer_angle_[0] * 60.0f / M_2PI);
+    motor_data_.target_motor_omega_6020[1] = static_cast<float>(steer_angle_[1] * 60.0f / M_2PI);
+    motor_data_.target_motor_omega_6020[2] = static_cast<float>(steer_angle_[2] * 60.0f / M_2PI);
+    motor_data_.target_motor_omega_6020[3] = static_cast<float>(steer_angle_[3] * 60.0f / M_2PI);
+
+    motor_data_.output_current_3508[0] = wheel_out_[0];
+    motor_data_.output_current_3508[1] = wheel_out_[1];
+    motor_data_.output_current_3508[2] = wheel_out_[2];
+    motor_data_.output_current_3508[3] = wheel_out_[3];
+
   }
 
   void LostCtrl() {
@@ -223,7 +294,6 @@ class Helm {
     target_vx_ = cmd_data_.x;
     target_vy_ = cmd_data_.y;
     target_omega_ = cmd_data_.z;
-    motor_max_speed_ = PARAM.wheel_radius * MOTOR_MAX_OMEGA;
   }
   /**
    * @brief 速控底盘控制
@@ -451,6 +521,14 @@ class Helm {
   }
 
   void Output() {
+
+    if(is_power_limited_){
+      for(int i=0;i<4;i++){
+        wheel_out_[i] = new_output_current_3508_[i];
+        steer_out_[i] = new_output_current_6020_[i];
+      }
+    }
+
     motor_wheel_0_->CurrentControl(wheel_out_[0]);
     motor_wheel_1_->CurrentControl(wheel_out_[1]);
     motor_wheel_2_->CurrentControl(wheel_out_[2]);
@@ -474,13 +552,18 @@ class Helm {
   LibXR::CycleValue<float> zero_[4] = {3.22642668, 2.09004819, 2.5839184, 6.25634098};
 
   float current_yaw_ = 0.0f;
-  float speed_[4] = {0.0f, 0.0f, 0.0f, 0.0f};
+  float speed_[4] = {0.0f, 0.0f, 0.0f, 0.0f};//转子的转速
   LibXR::CycleValue<float> angle_[4] = {0.0f, 0.0f, 0.0f, 0.0f};
-  float wheel_out_[4] = {0.0f, 0.0f, 0.0f, 0.0f};
+  float wheel_out_[4] = {0.0f, 0.0f, 0.0f, 0.0f};//输出的电流值
   float steer_out_[4] = {0.0f, 0.0f, 0.0f, 0.0f};
   float steer_angle_[4] = {0.0, 0.0, 0.0, 0.0};
 
-  float motor_max_speed_ = 0.0;
+  float new_output_current_3508_[4] = {0.0f, 0.0f, 0.0f, 0.0f};
+  float new_output_current_6020_[4] = {0.0f, 0.0f, 0.0f, 0.0f};
+  bool is_power_limited_ = false;
+  MotorData motor_data_;
+
+  float motor_max_speed_ = 9000.0;
 
   float direct_offset_ = 0.0f;
   LibXR::CycleValue<float> main_direct_ = 0.0f;

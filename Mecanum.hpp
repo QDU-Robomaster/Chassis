@@ -35,6 +35,11 @@ class Mecanum {
     float rotorspeed_rpm[4] = {0.0f, 0.0f, 0.0f, 0.0f};
     float target_motor_omega_[4] = {0.0f, 0.0f, 0.0f, 0.0f};
     float current_motor_omega_[4] = {0.0f, 0.0f, 0.0f, 0.0f};
+
+    float output_current_6020[4] = {0.0f, 0.0f, 0.0f, 0.0f};
+    float rotorspeed_rpm_6020[4] = {0.0f, 0.0f, 0.0f, 0.0f};
+    float target_motor_omega_6020[4] = {0.0f, 0.0f, 0.0f, 0.0f};
+    float current_motor_omega_6020[4] = {0.0f, 0.0f, 0.0f, 0.0f};
   };
 
   struct ChassisParam {
@@ -165,11 +170,11 @@ class Mecanum {
       }
 
       if (powercontrol_data_suber.Available()) {
-        auto power_data = powercontrol_data_suber.GetData();
+        auto powercontrol_data = powercontrol_data_suber.GetData();
         LibXR::Memory::FastCopy(mecanum->new_output_current_,
-                                power_data.new_output_current,
+                                powercontrol_data.new_output_current_3508,
                                 sizeof(mecanum->new_output_current_));
-        mecanum->is_power_limited_ = power_data.enable;
+        mecanum->is_power_limited_ = powercontrol_data.enable;
         powercontrol_data_suber.StartWaiting();
       }
 
