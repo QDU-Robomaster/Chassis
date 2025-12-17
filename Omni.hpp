@@ -36,6 +36,7 @@ class Omni {
     float target_motor_omega_3508[4] = {0.0f, 0.0f, 0.0f, 0.0f};
     float current_motor_omega_3508[4] = {0.0f, 0.0f, 0.0f, 0.0f};
 
+    /*全向轮未使用 全部发送0*/
     float output_current_6020[4] = {0.0f, 0.0f, 0.0f, 0.0f};
     float rotorspeed_rpm_6020[4] = {0.0f, 0.0f, 0.0f, 0.0f};
     float target_motor_omega_6020[4] = {0.0f, 0.0f, 0.0f, 0.0f};

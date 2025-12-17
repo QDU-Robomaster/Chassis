@@ -220,15 +220,10 @@ class Helm {
     motor_data_.current_motor_omega_3508[3] =
         motor_wheel_3_->GetOmega() / PARAM.reductionratio;
 
-    motor_data_.target_motor_omega_3508[0] = speed_[0] / PARAM.reductionratio;
-    motor_data_.target_motor_omega_3508[1] = speed_[1] / PARAM.reductionratio;
-    motor_data_.target_motor_omega_3508[2] = speed_[2] / PARAM.reductionratio;
-    motor_data_.target_motor_omega_3508[3] = speed_[3] / PARAM.reductionratio;
-
-    motor_data_.output_current_3508[0] = wheel_out_[0];
-    motor_data_.output_current_3508[1] = wheel_out_[1];
-    motor_data_.output_current_3508[2] = wheel_out_[2];
-    motor_data_.output_current_3508[3] = wheel_out_[3];
+    for(int i =0;i<4;i++){
+      motor_data_.target_motor_omega_3508[i] = static_cast<float>(speed_[i] / PARAM.reductionratio);
+      motor_data_.output_current_3508[i] = wheel_out_[i];
+    }
 
     /*6020数据*/
     motor_data_.rotorspeed_rpm_6020[0] = motor_steer_0_->GetRPM();
@@ -241,16 +236,10 @@ class Helm {
     motor_data_.current_motor_omega_6020[2] = motor_steer_2_->GetOmega();
     motor_data_.current_motor_omega_6020[3] = motor_steer_3_->GetOmega();
 
-    motor_data_.target_motor_omega_6020[0] = static_cast<float>(steer_angle_[0] * 60.0f / M_2PI);
-    motor_data_.target_motor_omega_6020[1] = static_cast<float>(steer_angle_[1] * 60.0f / M_2PI);
-    motor_data_.target_motor_omega_6020[2] = static_cast<float>(steer_angle_[2] * 60.0f / M_2PI);
-    motor_data_.target_motor_omega_6020[3] = static_cast<float>(steer_angle_[3] * 60.0f / M_2PI);
-
-    motor_data_.output_current_3508[0] = wheel_out_[0];
-    motor_data_.output_current_3508[1] = wheel_out_[1];
-    motor_data_.output_current_3508[2] = wheel_out_[2];
-    motor_data_.output_current_3508[3] = wheel_out_[3];
-
+    for(int i =0;i<4;i++){
+      motor_data_.target_motor_omega_6020[i] = static_cast<float>(steer_angle_[i] * 60.0f / M_2PI);
+      motor_data_.output_current_6020[i] = wheel_out_[i];
+    }
   }
 
   void LostCtrl() {
@@ -270,18 +259,11 @@ class Helm {
    */
   void SetMode(uint32_t mode) {
     mutex_.Lock();
-    pid_wheel_omega_[0].Reset();
-    pid_wheel_omega_[1].Reset();
-    pid_wheel_omega_[2].Reset();
-    pid_wheel_omega_[3].Reset();
-    pid_steer_angle_[0].Reset();
-    pid_steer_angle_[1].Reset();
-    pid_steer_angle_[2].Reset();
-    pid_steer_angle_[3].Reset();
-    pid_steer_speed_[0].Reset();
-    pid_steer_speed_[1].Reset();
-    pid_steer_speed_[2].Reset();
-    pid_steer_speed_[3].Reset();
+    for (int i = 0; i < 4; i++) {
+      pid_wheel_omega_[i].Reset();
+      pid_steer_angle_[i].Reset();
+      pid_steer_speed_[i].Reset();
+    }
     chassis_event_ = mode;
     mutex_.Unlock();
   }
