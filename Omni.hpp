@@ -199,7 +199,7 @@ class Omni {
       omni->SelfResolution();
       omni->InverseKinematicsSolution();
       omni->DynamicInverseSolution();
-      omni->DetectSlip();
+      //omni->DetectSlip();
       omni->topic_motor_data_.Publish(omni->motor_data_);
       omni->mutex_.Unlock();
       omni->OutputToDynamics();
@@ -281,7 +281,7 @@ class Omni {
       case static_cast<uint32_t>(Chassismode::INDEPENDENT):
           target_vx_ = cmd_data_.x * MOTOR_MAX_OMEGA *  PARAM.wheel_radius * SQRT2;
           target_vy_ = cmd_data_.y * MOTOR_MAX_OMEGA *  PARAM.wheel_radius * SQRT2;
-          target_omega_ = -cmd_data_.z * MOTOR_MAX_OMEGA * PARAM.wheel_to_center * SQRT2;
+          target_omega_ = cmd_data_.z * MOTOR_MAX_OMEGA * PARAM.wheel_to_center * SQRT2;
         break;
       default:
         break;
