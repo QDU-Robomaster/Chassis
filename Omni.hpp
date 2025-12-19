@@ -334,40 +334,6 @@ class Omni {
                              PARAM.wheel_radius;
   }
 
-  void DetectSlip() {
-   // TODO:云台角速度补偿
-    const float GYRO_BIAS_ALPHA = 0.01f;  // 偏置估计时常数（慢）
-
-    gyro_bias_x_ = (1.0f - GYRO_BIAS_ALPHA) * gyro_bias_x_ + GYRO_BIAS_ALPHA * gyro_.x();
-
-    float gx = gyro_.x() - gyro_bias_x_;
-    float diff = std::fabs(gx - now_omega_);
-
-    if(diff > 0.5f ) {
-      slip_detect_count_++;
-      slip_clear_count_ = 0;
-      if(slip_detect_count_ >= SLIP_DETECT_CONFIRM) {
-        is_slip_detected_chassis_ = true;
-        slip_detect_count_ = SLIP_DETECT_CONFIRM; // 防止溢出
-      }
-    } else {
-      slip_clear_count_++;
-      slip_detect_count_ = 0;
-      if(slip_clear_count_ >= SLIP_CLEAR_CONFIRM) {
-        is_slip_detected_chassis_ = false;
-        slip_clear_count_ = SLIP_CLEAR_CONFIRM; // 防止溢出
-      }
-    }
-
-    for(int i =0; i <4; i++) {
-    if(motor_data_.current_motor_omega_3508[i] - motor_data_.target_motor_omega_3508[i] > 20.0f) {
-      is_slip_detected_wheel_[i] = true;
-    } else {
-      is_slip_detected_wheel_[i] = false;
-    }
-  }
-  }
-
   /**
    * @brief 全向轮底盘逆动力学解算
    * @details
@@ -437,12 +403,6 @@ class Omni {
             new_output_current_[i] /
             (motor_wheel_0_->GetLSB() / PARAM.reductionratio /
              motor_wheel_0_->KGetTorque() / motor_wheel_0_->GetCurrentMAX());
-      }
-    }
-
-    if (is_slip_detected_chassis_) {
-      for (int i = 0; i < 4; i++) {
-        output_[i] *= slip_scale_factor_;  // 打滑时将输出电流减半
       }
     }
 
@@ -543,20 +503,10 @@ class Omni {
   float output_[4]{0.0f, 0.0f, 0.0f, 0.0f};
   float new_output_current_[4] = {0.0f, 0.0f, 0.0f, 0.0f};
   bool is_power_limited_ = false;
-  bool is_slip_detected_chassis_ = false;
-  bool is_slip_detected_wheel_[4] = {false, false, false, false};
-
-  int32_t slip_detect_count_ = 0;
-  int32_t slip_clear_count_ = 0;
-  const int SLIP_DETECT_CONFIRM = 3;//连续触发三次认为打滑
-  const int SLIP_CLEAR_CONFIRM = 5; //连续五次未触发认为打滑结束
-  float slip_scale_factor_ = 0.6f;
 
   float now_vx_ = 0.0f;
   float now_vy_ = 0.0f;
   float now_omega_ = 0.0f;
-
-  float gyro_bias_x_ = 0.0f; // 角速度计偏置估计值
 
   float target_vx_ = 0.0f;
   float target_vy_ = 0.0f;
