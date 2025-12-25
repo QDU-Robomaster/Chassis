@@ -125,6 +125,17 @@ depends:
 // clang-format on
 
 #include <cstdint>
+struct MotorData {
+  float output_current_3508[4] = {};
+  float rotorspeed_rpm_3508[4] = {};
+  float target_motor_omega_3508[4] = {};
+  float current_motor_omega_3508[4] = {};
+
+  float output_current_6020[4] = {};
+  float rotorspeed_rpm_6020[4] = {};
+  float target_motor_omega_6020[4] = {};
+  float current_motor_omega_6020[4] = {};
+};
 
 #include "CMD.hpp"
 #include "Helm.hpp"
@@ -134,14 +145,13 @@ depends:
 #include "app_framework.hpp"
 #include "libxr_def.hpp"
 #include "pid.hpp"
-#include "PowerControl.hpp"
 
 enum class ChassisEvent : uint8_t {
   SET_MODE_RELAX,
   SET_MODE_FOLLOW,
   SET_MODE_ROTOR,
   SET_MODE_6020_FOLLOW,
-  SET_MODE_INDENPENDENT,
+  SET_MODE_INDEPENDENT,
 };
 
 template <typename ChassisType>
@@ -155,7 +165,6 @@ class Chassis : public LibXR::Application {
     float wheel_resistance = 0.0f;
     float error_compensation = 0.0f;
   };
-typedef typename ChassisType:: MotorData MotorData;
 
   Chassis(LibXR::HardwareContainer &hw, LibXR::ApplicationManager &app,
           RMMotor *motor_wheel_0, RMMotor *motor_wheel_1,
@@ -197,13 +206,14 @@ typedef typename ChassisType:: MotorData MotorData;
           chassis->EventHandler(event_id);
         },
         this);
+
     chassis_event_.Register(static_cast<uint32_t>(ChassisEvent::SET_MODE_RELAX),callback);
 
     chassis_event_.Register(static_cast<uint32_t>(ChassisEvent::SET_MODE_FOLLOW), callback);
 
-    chassis_event_.Register(static_cast<uint32_t>(ChassisEvent::SET_MODE_ROTOR),callback);
+    chassis_event_.Register(static_cast<uint32_t>(ChassisEvent::SET_MODE_ROTOR), callback);
 
-    chassis_event_.Register(static_cast<uint32_t>(ChassisEvent::SET_MODE_INDENPENDENT), callback);
+    chassis_event_.Register(static_cast<uint32_t>(ChassisEvent::SET_MODE_INDEPENDENT), callback);
   }
 
   /**
