@@ -77,7 +77,8 @@ class Mecanum {
           RMMotor *motor_wheel_2, RMMotor *motor_wheel_3,
           RMMotor *motor_steer_0, RMMotor *motor_steer_1,
           RMMotor *motor_steer_2, RMMotor *motor_steer_3, CMD *cmd,
-          uint32_t task_stack_depth, ChassisParam chassis_param,
+          PowerControl *power_control,uint32_t task_stack_depth,
+          ChassisParam chassis_param,
           LibXR::PID<float>::Param pid_velocity_x,
           LibXR::PID<float>::Param pid_velocity_y,
           LibXR::PID<float>::Param pid_omega,
@@ -107,7 +108,8 @@ class Mecanum {
                          pid_steer_angle_2, pid_steer_angle_3},
         pid_steer_speed_{pid_steer_speed_0, pid_steer_speed_1,
                          pid_steer_speed_2, pid_steer_speed_3},
-        cmd_(cmd) {
+        cmd_(cmd),
+        power_control_(power_control) {
     UNUSED(hw);
     UNUSED(app);
     UNUSED(motor_steer_0);
@@ -218,7 +220,6 @@ class Mecanum {
     power_control_->OutputLimit(20);
     power_control_data_ = power_control_->GetPowerControlData();
   }
-
 
   /**
    * @brief 设置底盘模式 (由 Chassis 外壳调用)
@@ -434,12 +435,12 @@ class Mecanum {
       LibXR::PID<float>(LibXR::PID<float>::Param()),
       LibXR::PID<float>(LibXR::PID<float>::Param())};
 
+  CMD *cmd_;
+
+  MotorData motor_data_;
   PowerControl *power_control_;
   PowerControl::PowerControlData power_control_data_;
 
-  MotorData motor_data_;
-
-  CMD *cmd_;
   LibXR::Thread thread_;
   LibXR::Mutex mutex_;
 

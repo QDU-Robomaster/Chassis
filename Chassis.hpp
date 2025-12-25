@@ -171,7 +171,8 @@ class Chassis : public LibXR::Application {
           RMMotor *motor_wheel_2, RMMotor *motor_wheel_3,
           RMMotor *motor_steer_0, RMMotor *motor_steer_1,
           RMMotor *motor_steer_2, RMMotor *motor_steer_3, CMD *cmd,
-          uint32_t task_stack_depth, ChassisParam chassis_param = {},
+          PowerControl *power_control, uint32_t task_stack_depth,
+          ChassisParam chassis_param = {},
           LibXR::PID<float>::Param pid_velocity_x_ = {},
           LibXR::PID<float>::Param pid_velocity_y_ = {},
           LibXR::PID<float>::Param pid_omega_ = {},
@@ -189,7 +190,7 @@ class Chassis : public LibXR::Application {
           LibXR::PID<float>::Param pid_steer_speed_3_ = {})
       : chassis_(hw, app, motor_wheel_0, motor_wheel_1, motor_wheel_2,
                  motor_wheel_3, motor_steer_0, motor_steer_1, motor_steer_2,
-                 motor_steer_3, cmd, task_stack_depth,
+                 motor_steer_3, cmd, power_control, task_stack_depth,
                  typename ChassisType::ChassisParam{
                      chassis_param.wheel_radius, chassis_param.wheel_to_center,
                      chassis_param.gravity_height, chassis_param.reductionratio,
@@ -213,7 +214,8 @@ class Chassis : public LibXR::Application {
 
     chassis_event_.Register(static_cast<uint32_t>(ChassisEvent::SET_MODE_ROTOR), callback);
 
-    chassis_event_.Register(static_cast<uint32_t>(ChassisEvent::SET_MODE_INDEPENDENT), callback);
+    chassis_event_.Register(
+        static_cast<uint32_t>(ChassisEvent::SET_MODE_INDEPENDENT), callback);
   }
 
   /**

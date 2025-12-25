@@ -74,10 +74,12 @@ class Omni {
    * @param pid_steer_angle_3 舵机3角度PID参数（本底盘未使用）
    */
   Omni(LibXR::HardwareContainer &hw, LibXR::ApplicationManager &app,
-       RMMotor *motor_wheel_0, RMMotor *motor_wheel_1, RMMotor *motor_wheel_2,
-       RMMotor *motor_wheel_3, RMMotor *motor_steer_0, RMMotor *motor_steer_1,
+       RMMotor *motor_wheel_0, RMMotor *motor_wheel_1,
+       RMMotor *motor_wheel_2, RMMotor *motor_wheel_3,
+       RMMotor *motor_steer_0, RMMotor *motor_steer_1,
        RMMotor *motor_steer_2, RMMotor *motor_steer_3, CMD *cmd,
-       uint32_t task_stack_depth, ChassisParam chassis_param,
+       PowerControl *power_control, uint32_t task_stack_depth,
+       ChassisParam chassis_param,
        LibXR::PID<float>::Param pid_velocity_x,
        LibXR::PID<float>::Param pid_velocity_y,
        LibXR::PID<float>::Param pid_omega,
@@ -108,6 +110,7 @@ class Omni {
         pid_steer_speed_{pid_steer_speed_0, pid_steer_speed_1,
                          pid_steer_speed_2, pid_steer_speed_3},
         cmd_(cmd),
+        power_control_(power_control),
         cmd_file_(InitCmdFile()) {
     UNUSED(hw);
     UNUSED(app);
@@ -517,13 +520,13 @@ class Omni {
   LibXR::Thread thread_;
   LibXR::Mutex mutex_;
 
+  CMD *cmd_;
+  CMD::ChassisCMD cmd_data_;
+
+  MotorData motor_data_;
   PowerControl *power_control_;
   PowerControl::PowerControlData power_control_data_;
 
-  MotorData motor_data_;
-
-  CMD *cmd_;
-  CMD::ChassisCMD cmd_data_;
   uint32_t chassis_event_ = 0;
 
   LibXR::RamFS::File cmd_file_;

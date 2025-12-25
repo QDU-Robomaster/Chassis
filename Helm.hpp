@@ -73,14 +73,15 @@ class Helm {
    * @param pid_steer_angle_3 舵机3角度PID参数
    */
   Helm(LibXR::HardwareContainer &hw, LibXR::ApplicationManager &app,
-       RMMotor *motor_wheel_0, RMMotor *motor_wheel_1, RMMotor *motor_wheel_2,
-       RMMotor *motor_wheel_3, RMMotor *motor_steer_0, RMMotor *motor_steer_1,
+       RMMotor *motor_wheel_0, RMMotor *motor_wheel_1,
+       RMMotor *motor_wheel_2, RMMotor *motor_wheel_3,
+       RMMotor *motor_steer_0, RMMotor *motor_steer_1,
        RMMotor *motor_steer_2, RMMotor *motor_steer_3, CMD *cmd,
-       uint32_t task_stack_depth, ChassisParam chassis_param,
+       PowerControl *power_control,uint32_t task_stack_depth,
+       ChassisParam chassis_param,
        LibXR::PID<float>::Param pid_velocity_x,
        LibXR::PID<float>::Param pid_velocity_y,
-       LibXR::PID<float>::Param
-           pid_omega,  // 此时姑且认为pid_omega_为gimbal_follow的pid
+       LibXR::PID<float>::Param pid_omega,  // 此时姑且认为pid_omega_为gimbal_follow的pid
        LibXR::PID<float>::Param pid_wheel_omega_0,
        LibXR::PID<float>::Param pid_wheel_omega_1,
        LibXR::PID<float>::Param pid_wheel_omega_2,
@@ -111,7 +112,8 @@ class Helm {
                          pid_steer_angle_2, pid_steer_angle_3},
         pid_steer_speed_{pid_steer_speed_0, pid_steer_speed_1,
                          pid_steer_speed_2, pid_steer_speed_3},
-        cmd_(cmd) {
+        cmd_(cmd),
+        power_control_(power_control) {
     UNUSED(hw);
     UNUSED(app);
     thread_.Create(this, ThreadFunction, "HelmChassisThread", task_stack_depth,
@@ -218,7 +220,7 @@ class Helm {
     for (int i = 0; i < 4; i++) {
       motor_data_.target_motor_omega_6020[i] =
           static_cast<float>(steer_angle_[i] * 60.0f / M_2PI);
-      motor_data_.output_current_6020[i] = wheel_out_[i];
+      motor_data_.output_current_6020[i] = steer_out_[i];
     }
 
     power_control_->CalculatePowerControlParam(
@@ -556,11 +558,6 @@ class Helm {
   float steer_out_[4] = {0.0f, 0.0f, 0.0f, 0.0f};
   float steer_angle_[4] = {0.0, 0.0, 0.0, 0.0};
 
-  MotorData motor_data_;
-
-  PowerControl *power_control_;
-  PowerControl::PowerControlData power_control_data_;
-
   float motor_max_speed_ = 9000.0;
 
   float direct_offset_ = 0.0f;
@@ -599,6 +596,11 @@ class Helm {
       LibXR::PID<float>(LibXR::PID<float>::Param())};
 
   CMD *cmd_;
+
+  MotorData motor_data_;
+  PowerControl *power_control_;
+  PowerControl::PowerControlData power_control_data_;
+
   LibXR::Thread thread_;
   LibXR::Mutex mutex_;
 
