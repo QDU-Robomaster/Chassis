@@ -14,6 +14,7 @@ constructor_args:
   - motor_steer_3: '@&motor_steer_3'
   - cmd: '@&cmd'
   - task_stack_depth: 4096
+  - power_control: '@&power_control'
   - ChassisParam:
       wheel_radius: 0.063
       wheel_to_center: 0.31
