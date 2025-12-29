@@ -125,6 +125,17 @@ depends:
 // clang-format on
 
 #include <cstdint>
+struct MotorData {
+  float output_current_3508[4] = {};
+  float rotorspeed_rpm_3508[4] = {};
+  float target_motor_omega_3508[4] = {};
+  float current_motor_omega_3508[4] = {};
+
+  float output_current_6020[4] = {};
+  float rotorspeed_rpm_6020[4] = {};
+  float target_motor_omega_6020[4] = {};
+  float current_motor_omega_6020[4] = {};
+};
 
 #include "CMD.hpp"
 #include "Helm.hpp"
@@ -140,7 +151,7 @@ enum class ChassisEvent : uint8_t {
   SET_MODE_FOLLOW,
   SET_MODE_ROTOR,
   SET_MODE_6020_FOLLOW,
-  SET_MODE_INDENPENDENT,
+  SET_MODE_INDEPENDENT,
 };
 
 template <typename ChassisType>
@@ -154,14 +165,14 @@ class Chassis : public LibXR::Application {
     float wheel_resistance = 0.0f;
     float error_compensation = 0.0f;
   };
-typedef typename ChassisType:: MotorData MotorData;
 
   Chassis(LibXR::HardwareContainer &hw, LibXR::ApplicationManager &app,
           RMMotor *motor_wheel_0, RMMotor *motor_wheel_1,
           RMMotor *motor_wheel_2, RMMotor *motor_wheel_3,
           RMMotor *motor_steer_0, RMMotor *motor_steer_1,
           RMMotor *motor_steer_2, RMMotor *motor_steer_3, CMD *cmd,
-          uint32_t task_stack_depth, ChassisParam chassis_param = {},
+          PowerControl *power_control, uint32_t task_stack_depth,
+          ChassisParam chassis_param = {},
           LibXR::PID<float>::Param pid_velocity_x_ = {},
           LibXR::PID<float>::Param pid_velocity_y_ = {},
           LibXR::PID<float>::Param pid_omega_ = {},
@@ -179,7 +190,7 @@ typedef typename ChassisType:: MotorData MotorData;
           LibXR::PID<float>::Param pid_steer_speed_3_ = {})
       : chassis_(hw, app, motor_wheel_0, motor_wheel_1, motor_wheel_2,
                  motor_wheel_3, motor_steer_0, motor_steer_1, motor_steer_2,
-                 motor_steer_3, cmd, task_stack_depth,
+                 motor_steer_3, cmd, power_control, task_stack_depth,
                  typename ChassisType::ChassisParam{
                      chassis_param.wheel_radius, chassis_param.wheel_to_center,
                      chassis_param.gravity_height, chassis_param.reductionratio,
@@ -196,13 +207,15 @@ typedef typename ChassisType:: MotorData MotorData;
           chassis->EventHandler(event_id);
         },
         this);
+
     chassis_event_.Register(static_cast<uint32_t>(ChassisEvent::SET_MODE_RELAX),callback);
 
     chassis_event_.Register(static_cast<uint32_t>(ChassisEvent::SET_MODE_FOLLOW), callback);
 
-    chassis_event_.Register(static_cast<uint32_t>(ChassisEvent::SET_MODE_ROTOR),callback);
+    chassis_event_.Register(static_cast<uint32_t>(ChassisEvent::SET_MODE_ROTOR), callback);
 
-    chassis_event_.Register(static_cast<uint32_t>(ChassisEvent::SET_MODE_INDENPENDENT), callback);
+    chassis_event_.Register(
+        static_cast<uint32_t>(ChassisEvent::SET_MODE_INDEPENDENT), callback);
   }
 
   /**
