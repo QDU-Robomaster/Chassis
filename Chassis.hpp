@@ -215,8 +215,7 @@ class Chassis : public LibXR::Application {
 
     chassis_event_.Register(static_cast<uint32_t>(ChassisEvent::SET_MODE_ROTOR), callback);
 
-    chassis_event_.Register(
-        static_cast<uint32_t>(ChassisEvent::SET_MODE_INDEPENDENT), callback);
+    chassis_event_.Register(static_cast<uint32_t>(ChassisEvent::SET_MODE_INDEPENDENT), callback);
   }
 
   /**
