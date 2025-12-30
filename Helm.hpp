@@ -46,7 +46,7 @@ class Helm {
   };
 
   /**
-   * @brief 构造函数，初始化全向轮底盘控制对象
+   * @brief 构造函数，初始化舵轮底盘控制对象
    * @param hw 硬件容器引用
    * @param app 应用管理器引用
    * @param cmd 控制命令引用
@@ -59,7 +59,7 @@ class Helm {
    * @param motor_steer_2 第2个舵向电机指针
    * @param motor_steer_3 第3个舵向电机指针
    * @param task_stack_depth 控制线程栈深度
-   * @param chassis_param 全向轮底盘参数
+   * @param chassis_param 舵轮底盘参数
    * @param pid_velocity_x X方向速度PID参数
    * @param pid_velocity_y Y方向速度PID参数
    * @param pid_omega 角速度PID参数
@@ -223,6 +223,7 @@ class Helm {
       motor_data_.output_current_6020[i] = steer_out_[i];
     }
 
+    /*3508和6020参数拟合*/
     power_control_->CalculatePowerControlParam(
         motor_data_.output_current_3508, motor_data_.rotorspeed_rpm_3508,
         motor_data_.target_motor_omega_3508,
@@ -286,8 +287,7 @@ class Helm {
         target_vy_ = 0.0f;
         break;
       case static_cast<uint32_t>(Chassismode::INDEPENDENT):
-      case static_cast<uint32_t>(
-          Chassismode::FOLLOW6020):  // independent  // 6020_follow
+      case static_cast<uint32_t>(Chassismode::FOLLOW6020):  // independent  // 6020_follow
 
         tmp_ = sqrtf(cmd_data_.x * cmd_data_.x + cmd_data_.y * cmd_data_.y) *
                SQRT2 / 2.0f;
@@ -597,7 +597,7 @@ class Helm {
 
   CMD *cmd_;
 
-  MotorData motor_data_;
+  MotorData motor_data_={};
   PowerControl *power_control_;
   PowerControl::PowerControlData power_control_data_;
 
