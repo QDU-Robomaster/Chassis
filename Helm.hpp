@@ -72,16 +72,16 @@ class Helm {
    * @param pid_steer_angle_2 舵机2角度PID参数
    * @param pid_steer_angle_3 舵机3角度PID参数
    */
-  Helm(LibXR::HardwareContainer &hw, LibXR::ApplicationManager &app,
-       RMMotor *motor_wheel_0, RMMotor *motor_wheel_1,
-       RMMotor *motor_wheel_2, RMMotor *motor_wheel_3,
-       RMMotor *motor_steer_0, RMMotor *motor_steer_1,
-       RMMotor *motor_steer_2, RMMotor *motor_steer_3, CMD *cmd,
-       PowerControl *power_control,uint32_t task_stack_depth,
-       ChassisParam chassis_param,
+  Helm(LibXR::HardwareContainer& hw, LibXR::ApplicationManager& app,
+       RMMotor* motor_wheel_0, RMMotor* motor_wheel_1, RMMotor* motor_wheel_2,
+       RMMotor* motor_wheel_3, RMMotor* motor_steer_0, RMMotor* motor_steer_1,
+       RMMotor* motor_steer_2, RMMotor* motor_steer_3, CMD* cmd,
+       PowerControl* power_control, uint32_t task_stack_depth,
+       ChassisParam chassis_param, LibXR::PID<float>::Param pid_follow_,
        LibXR::PID<float>::Param pid_velocity_x,
        LibXR::PID<float>::Param pid_velocity_y,
-       LibXR::PID<float>::Param pid_omega,  // 此时姑且认为pid_omega_为gimbal_follow的pid
+       LibXR::PID<float>::Param
+           pid_omega,  // 此时姑且认为pid_omega_为gimbal_follow的pid
        LibXR::PID<float>::Param pid_wheel_omega_0,
        LibXR::PID<float>::Param pid_wheel_omega_1,
        LibXR::PID<float>::Param pid_wheel_omega_2,
@@ -103,6 +103,7 @@ class Helm {
         motor_steer_1_(motor_steer_1),
         motor_steer_2_(motor_steer_2),
         motor_steer_3_(motor_steer_3),
+        pid_follow_(pid_follow_),
         pid_velocity_x_(pid_velocity_x),
         pid_velocity_y_(pid_velocity_y),
         pid_omega_(pid_omega),
@@ -527,7 +528,10 @@ class Helm {
         steer_out_[i] = power_control_data_.new_output_current_6020[i];
       }
     }
-
+    if(chassis_event_==static_cast<uint32_t>(Chassismode::RELAX)){
+      LostCtrl();
+    }
+    else{
     motor_wheel_0_->CurrentControl(wheel_out_[0]);
     motor_wheel_1_->CurrentControl(wheel_out_[1]);
     motor_wheel_2_->CurrentControl(wheel_out_[2]);
@@ -536,6 +540,8 @@ class Helm {
     motor_steer_1_->CurrentControl(steer_out_[1]);
     motor_steer_2_->CurrentControl(steer_out_[2]);
     motor_steer_3_->CurrentControl(steer_out_[3]);
+    }
+
   }
 
  private:
@@ -551,7 +557,7 @@ class Helm {
   LibXR::CycleValue<float> zero_[4] = {3.22642668, 2.09004819, 2.5839184,
                                        6.25634098};
 
-  float current_yaw_ = 0.0f;
+  float  current_yaw_ = 0.0f;
   float speed_[4] = {0.0f, 0.0f, 0.0f, 0.0f};  // 转子的转速
   LibXR::CycleValue<float> angle_[4] = {0.0f, 0.0f, 0.0f, 0.0f};
   float wheel_out_[4] = {0.0f, 0.0f, 0.0f, 0.0f};  // 输出的电流值
@@ -575,6 +581,7 @@ class Helm {
   RMMotor *motor_steer_2_;
   RMMotor *motor_steer_3_;
 
+  LibXR::PID<float> pid_follow_;
   LibXR::PID<float> pid_velocity_x_;
   LibXR::PID<float> pid_velocity_y_;
   LibXR::PID<float> pid_omega_;  // 此时姑且认为pid_omega_为gimbal_follow的pid
