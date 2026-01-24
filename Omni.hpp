@@ -278,7 +278,7 @@ class Omni {
         break;
     }
 
-    // 计算vx,vy
+    /* 计算vx,vy */
     switch (chassis_event_) {
       case static_cast<uint32_t>(Chassismode::RELAX):
         target_vx_ = 0.0f;
@@ -434,13 +434,13 @@ class Omni {
    * @brief 功率控制更新
    */
   void PowerControlUpdate() {
-    // 获取电机转速
+    /* 获取电机转速 */
     motor_data_.rotorspeed_rpm_3508[0] = motor_wheel_0_->GetRPM();
     motor_data_.rotorspeed_rpm_3508[1] = motor_wheel_1_->GetRPM();
     motor_data_.rotorspeed_rpm_3508[2] = motor_wheel_2_->GetRPM();
     motor_data_.rotorspeed_rpm_3508[3] = motor_wheel_3_->GetRPM();
 
-    // 获取当前轮速
+    /* 获取当前轮速 */
     motor_data_.current_motor_omega_3508[0] =
         motor_wheel_0_->GetOmega() / PARAM.reductionratio;
     motor_data_.current_motor_omega_3508[1] =
@@ -450,17 +450,17 @@ class Omni {
     motor_data_.current_motor_omega_3508[3] =
         motor_wheel_3_->GetOmega() / PARAM.reductionratio;
 
-    // 设置目标角速度和输出电流
+    /* 设置目标角速度和输出电流 */
     for (int i = 0; i < 4; i++) {
       motor_data_.target_motor_omega_3508[i] = target_motor_omega_[i];
-      // 转换为功率控制需要的电流单位
+      /* 转换为功率控制需要的电流单位 */
       motor_data_.output_current_3508[i] =
           output_[i] *
           (motor_wheel_0_->GetLSB() / PARAM.reductionratio /
            motor_wheel_0_->KGetTorque() / motor_wheel_0_->GetCurrentMAX());
     }
 
-    // 设置3508电机数据
+    /* 设置3508电机数据 */
     power_control_->SetMotorData3508(motor_data_.output_current_3508,
                                      motor_data_.rotorspeed_rpm_3508,
                                      motor_data_.target_motor_omega_3508,
@@ -483,7 +483,7 @@ class Omni {
     float force_y = pid_velocity_y_.Calculate(target_vy_, now_vy_, dt_);
     float force_z = pid_omega_.Calculate(target_omega_, now_omega_, dt_);
 
-    // 分配（最小范数 / 平均分配 torque）//切向合力=质量*角加速度*转动半径
+    /* 分配（最小范数 / 平均分配 torque）//切向合力=质量*角加速度*转动半径 */
     target_motor_force_[0] = (SQRT2 * force_x - SQRT2 * force_y + force_z) / 4;
     target_motor_force_[1] = (SQRT2 * force_x + SQRT2 * force_y + force_z) / 4;
     target_motor_force_[2] = (-SQRT2 * force_x + SQRT2 * force_y + force_z) / 4;

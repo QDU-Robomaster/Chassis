@@ -222,7 +222,7 @@ class Helm {
   }
 
   void PowerControlUpdate() {
-    // 3508电机数据
+    /*3508电机数据*/
     motor_data_.rotorspeed_rpm_3508[0] = motor_wheel_0_->GetRPM();
     motor_data_.rotorspeed_rpm_3508[1] = motor_wheel_1_->GetRPM();
     motor_data_.rotorspeed_rpm_3508[2] = motor_wheel_2_->GetRPM();
@@ -243,7 +243,7 @@ class Helm {
       motor_data_.output_current_3508[i] = wheel_out_[i];
     }
 
-    // 6020电机数据
+    /*6020电机数据*/
     motor_data_.rotorspeed_rpm_6020[0] = motor_steer_0_->GetRPM();
     motor_data_.rotorspeed_rpm_6020[1] = motor_steer_1_->GetRPM();
     motor_data_.rotorspeed_rpm_6020[2] = motor_steer_2_->GetRPM();
@@ -260,13 +260,13 @@ class Helm {
       motor_data_.output_current_6020[i] = steer_out_[i];
     }
 
-    // 设置3508电机数据
+    /* 设置3508电机数据 */
     power_control_->SetMotorData3508(motor_data_.output_current_3508,
                                      motor_data_.rotorspeed_rpm_3508,
                                      motor_data_.target_motor_omega_3508,
                                      motor_data_.current_motor_omega_3508);
 
-    // 设置6020电机数据
+    /* 设置6020电机数据 */
     power_control_->SetMotorData6020(motor_data_.output_current_6020,
                                      motor_data_.rotorspeed_rpm_6020,
                                      motor_data_.target_motor_omega_6020,
@@ -322,7 +322,7 @@ class Helm {
           break;
       }
 
-      // 计算 wz
+      /* 计算 wz */
       switch (chassis_event_) {
         case static_cast<uint32_t>(Chassismode::RELAX):
           target_omega_ = 0.0f;
@@ -348,7 +348,7 @@ class Helm {
           break;
       }
 
-      // 计算
+      /* 计算 */
       switch (chassis_event_) {
         case static_cast<uint32_t>(Chassismode::RELAX):  // break
           for (int i = 0; i < 4; i++) {
@@ -383,7 +383,7 @@ class Helm {
           }
           break;
       }
-      // 最短路径
+      /* 最短路径 */
       for (int i = 0; i < 4; i++) {
         switch (i) {
           case 0:
@@ -423,7 +423,7 @@ class Helm {
             break;
         }
       }
-      // 输出计算
+      /* 输出计算 */
       for (int i = 0; i < 4; i++) {
         switch (i) {
           case 0:
@@ -556,15 +556,21 @@ class Helm {
     float target_omega_ = 0.0f;
 
     float tmp_ = 0.0f;
-    float wz_dir_mult_ = 1.0f; /* 小陀螺模式旋转方向乘数 */
+
+    /* 小陀螺模式旋转方向乘数 */
+    float wz_dir_mult_ = 1.0f;
     bool motor_reverse_[4]{false, false, false, false};
     LibXR::CycleValue<float> zero_[4] = {3.22642668, 2.09004819,
                                          2.5839184,  6.25634098};
 
     float current_yaw_ = 0.0f;
-    float speed_[4] = {0.0f, 0.0f, 0.0f, 0.0f};  // 转子的转速
+
+    /* 转子的转速 */
+    float speed_[4] = {0.0f, 0.0f, 0.0f, 0.0f};
     LibXR::CycleValue<float> angle_[4] = {0.0f, 0.0f, 0.0f, 0.0f};
-    float wheel_out_[4] = {0.0f, 0.0f, 0.0f, 0.0f};  // 输出的电流值
+
+    /* 输出的电流值 */
+    float wheel_out_[4] = {0.0f, 0.0f, 0.0f, 0.0f};
     float steer_out_[4] = {0.0f, 0.0f, 0.0f, 0.0f};
     float steer_angle_[4] = {0.0, 0.0, 0.0, 0.0};
 
@@ -588,7 +594,8 @@ class Helm {
     LibXR::PID<float> pid_follow_;
     LibXR::PID<float> pid_velocity_x_;
     LibXR::PID<float> pid_velocity_y_;
-    LibXR::PID<float> pid_omega_;  // 此时姑且认为pid_omega_为gimbal_follow的pid
+    /* 此时姑且认为pid_omega_为gimbal_follow的pid */
+    LibXR::PID<float> pid_omega_;
 
     LibXR::PID<float> pid_wheel_omega_[4] = {
         LibXR::PID<float>(LibXR::PID<float>::Param()),

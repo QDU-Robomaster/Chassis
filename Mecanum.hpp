@@ -317,7 +317,7 @@ class Mecanum {
         target_motor_omega_[3],
         motor_wheel_3_->GetOmega() / PARAM.reductionratio, dt_);
 
-    // 计算原始输出 (PID + 前馈力矩)
+    /* 计算原始输出 (PID + 前馈力矩) */
     for (int i = 0; i < 4; i++) {
       output_[i] = target_motor_current_[i] +
                    target_motor_force_[i] * PARAM.wheel_radius;
@@ -328,13 +328,13 @@ class Mecanum {
    * @brief 功率控制更新
    */
   void PowerControlUpdate() {
-    // 获取电机转速
+    /* 获取电机转速 */
     motor_data_.rotorspeed_rpm_3508[0] = motor_wheel_0_->GetRPM();
     motor_data_.rotorspeed_rpm_3508[1] = motor_wheel_1_->GetRPM();
     motor_data_.rotorspeed_rpm_3508[2] = motor_wheel_2_->GetRPM();
     motor_data_.rotorspeed_rpm_3508[3] = motor_wheel_3_->GetRPM();
 
-    // 获取当前轮速
+    /* 获取当前轮速 */
     motor_data_.current_motor_omega_3508[0] =
         motor_wheel_0_->GetOmega() / PARAM.reductionratio;
     motor_data_.current_motor_omega_3508[1] =
@@ -344,7 +344,7 @@ class Mecanum {
     motor_data_.current_motor_omega_3508[3] =
         motor_wheel_3_->GetOmega() / PARAM.reductionratio;
 
-    // 设置目标角速度和输出电流
+    /* 设置目标角速度和输出电流 */
     for (int i = 0; i < 4; i++) {
       motor_data_.target_motor_omega_3508[i] = target_motor_omega_[i];
       motor_data_.output_current_3508[i] =
@@ -353,7 +353,7 @@ class Mecanum {
            motor_wheel_0_->KGetTorque() / motor_wheel_0_->GetCurrentMAX());
     }
 
-    // 设置3508电机数据
+    /* 设置3508电机数据 */
     power_control_->SetMotorData3508(motor_data_.output_current_3508,
                                      motor_data_.rotorspeed_rpm_3508,
                                      motor_data_.target_motor_omega_3508,
