@@ -177,9 +177,8 @@ class Omni {
       if (euler_suber.Available()) {
         omni->euler_ = euler_suber.GetData();
         euler_suber.StartWaiting();
-
-        omni->current_pitch_ =
-            omni->euler_.Pitch();  // 这里后期需要改成相对角度
+        //TODO: 这里后期需要改成相对角度
+        omni->current_pitch_ = omni->euler_.Pitch();
         omni->current_roll_ = omni->euler_.Roll();
         omni->current_yaw_ = omni->euler_.Yaw();
       }
@@ -336,8 +335,8 @@ class Omni {
    * @brief 前馈
    *
    */
-  void FeedForward() {  // 轮子分配按顺时针/逆时针为正方向计算的，需要确定一下
-
+  void FeedForward() {
+ //TODO: 这里后期需要改成相对角度
     float k = M_PI / 100;
 
     gx_ff_ = -PARAM.gravity *
