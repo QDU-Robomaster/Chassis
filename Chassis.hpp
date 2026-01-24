@@ -22,6 +22,14 @@ constructor_args:
       reductionratio: 15.7647
       wheel_resistance: 0.0
       error_compensation: 0.0
+  - pid_follow:
+      k: 1.0
+      p: 0.2
+      i: 0.0
+      d: 0.0
+      i_limit: 0.0
+      out_limit: 0.0
+      cycle: false
   - pid_velocity_x_:
       k: 0.0015
       p: 14.0
@@ -174,6 +182,7 @@ class Chassis : public LibXR::Application {
           RMMotor *motor_steer_2, RMMotor *motor_steer_3, CMD *cmd,
           PowerControl *power_control, uint32_t task_stack_depth,
           ChassisParam chassis_param = {},
+          LibXR::PID<float>::Param pid_follow_ = {},
           LibXR::PID<float>::Param pid_velocity_x_ = {},
           LibXR::PID<float>::Param pid_velocity_y_ = {},
           LibXR::PID<float>::Param pid_omega_ = {},
@@ -197,7 +206,7 @@ class Chassis : public LibXR::Application {
                      chassis_param.gravity_height, chassis_param.reductionratio,
                      chassis_param.wheel_resistance,
                      chassis_param.error_compensation},
-                 pid_velocity_x_, pid_velocity_y_, pid_omega_,
+                 pid_follow_, pid_velocity_x_, pid_velocity_y_, pid_omega_,
                  pid_wheel_angle_0_, pid_wheel_angle_1_, pid_wheel_angle_2_,
                  pid_wheel_angle_3_, pid_steer_angle_0_, pid_steer_angle_1_,
                  pid_steer_angle_2_, pid_steer_angle_3_, pid_steer_speed_0_,
@@ -211,11 +220,11 @@ class Chassis : public LibXR::Application {
 
     chassis_event_.Register(static_cast<uint32_t>(ChassisEvent::SET_MODE_RELAX),callback);
 
-    chassis_event_.Register(static_cast<uint32_t>(ChassisEvent::SET_MODE_FOLLOW), callback);
+    chassis_event_.Register(static_cast<uint32_t>(ChassisEvent::SET_MODE_INDEPENDENT), callback);
 
     chassis_event_.Register(static_cast<uint32_t>(ChassisEvent::SET_MODE_ROTOR), callback);
 
-    chassis_event_.Register(static_cast<uint32_t>(ChassisEvent::SET_MODE_INDEPENDENT), callback);
+    chassis_event_.Register(static_cast<uint32_t>(ChassisEvent::SET_MODE_FOLLOW), callback);
   }
 
   /**
