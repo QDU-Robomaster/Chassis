@@ -23,7 +23,7 @@ depends: []
 #include "pid.hpp"
 #include "thread.hpp"
 
-#define MECANUM_MOTOR_MAX_OMEGA 50*0.5/* 电机输出轴最大角速度 */
+#define MECANUM_MOTOR_MAX_OMEGA 52/* 电机输出轴最大角速度 */
 
 template <typename ChassisType>
 class Chassis;
