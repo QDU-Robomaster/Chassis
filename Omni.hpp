@@ -198,7 +198,7 @@ class Omni {
       omni->PowerControlUpdate();
       omni->mutex_.Unlock();
       omni->OutputToDynamics();
-      omni->thread_.SleepUntil(last_time, 2);
+      omni->thread_.Sleep( 2);
     }
   }
 
@@ -270,8 +270,7 @@ class Omni {
 
       /*十字跟随云台*/
       case static_cast<uint32_t>(Chassismode::FOLLOW_GIMBAL_CROSS):
-        target_omega_ = pid_follow_.Calculate(
-            0.0f, static_cast<float>(chassis_yaw_ - M_PI / 4.0f), dt_);
+        target_omega_ = pid_follow_.Calculate(0.0f, static_cast<float>(chassis_yaw_ - M_PI / 4.0f), dt_);
         break;
 
       default:
