@@ -177,14 +177,13 @@ class Omni {
       if (euler_suber.Available()) {
         omni->euler_ = euler_suber.GetData();
         euler_suber.StartWaiting();
-        //TODO: 这里后期需要改成相对角度
         omni->current_pitch_ = omni->euler_.Pitch();
         omni->current_roll_ = omni->euler_.Roll();
         omni->current_yaw_ = omni->euler_.Yaw();
       }
 
       if (chassis_yaw.Available()) {
-        omni->chassis_yaw_ = -chassis_yaw.GetData();
+        omni->chassis_yaw_ = chassis_yaw.GetData();
         chassis_yaw.StartWaiting();
       }
 
@@ -198,7 +197,7 @@ class Omni {
       omni->PowerControlUpdate();
       omni->mutex_.Unlock();
       omni->OutputToDynamics();
-      omni->thread_.Sleep( 2);
+      omni->thread_.SleepUntil(last_time, 2);
     }
   }
 

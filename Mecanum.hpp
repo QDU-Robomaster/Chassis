@@ -16,7 +16,6 @@ depends: []
 #include "PowerControl.hpp"
 #include "RMMotor.hpp"
 #include "app_framework.hpp"
-#include "arm_math_types.h"
 #include "event.hpp"
 #include "libxr_def.hpp"
 #include "libxr_time.hpp"
@@ -80,8 +79,7 @@ class Mecanum {
           RMMotor *motor_steer_0, RMMotor *motor_steer_1,
           RMMotor *motor_steer_2, RMMotor *motor_steer_3, CMD *cmd,
           PowerControl *power_control, uint32_t task_stack_depth,
-          ChassisParam chassis_param,
-          LibXR::PID<float>::Param pid_follow,
+          ChassisParam chassis_param, LibXR::PID<float>::Param pid_follow,
           LibXR::PID<float>::Param pid_velocity_x,
           LibXR::PID<float>::Param pid_velocity_y,
           LibXR::PID<float>::Param pid_omega,
@@ -98,13 +96,13 @@ class Mecanum {
           LibXR::PID<float>::Param pid_steer_speed_2,
           LibXR::PID<float>::Param pid_steer_speed_3)
       : PARAM(chassis_param),
-        motor_wheel_0_(motor_wheel_0),//LF
-        motor_wheel_1_(motor_wheel_1),//LB
-        motor_wheel_2_(motor_wheel_2),//RB
-        motor_wheel_3_(motor_wheel_3),//RF
-        pid_follow_(pid_follow),
-        pid_velocity_x_(pid_velocity_x),
-        pid_velocity_y_(pid_velocity_y),
+        motor_wheel_0_(motor_wheel_0),   /*wheel0   ▲ y  wheel3*/
+        motor_wheel_1_(motor_wheel_1),   /*    ↑    │     ↓    */
+        motor_wheel_2_(motor_wheel_2),   /*         │          */
+        motor_wheel_3_(motor_wheel_3),   /* ――――――――│―――――――▶x */
+        pid_follow_(pid_follow),         /*         │          */
+        pid_velocity_x_(pid_velocity_x), /*    ↑    │     ↓    */
+        pid_velocity_y_(pid_velocity_y), /*wheel1   │    wheel2*/
         pid_omega_(pid_omega),
         pid_wheel_omega_{pid_wheel_omega_0, pid_wheel_omega_1,
                          pid_wheel_omega_2, pid_wheel_omega_3},
