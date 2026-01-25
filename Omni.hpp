@@ -177,14 +177,13 @@ class Omni {
       if (euler_suber.Available()) {
         omni->euler_ = euler_suber.GetData();
         euler_suber.StartWaiting();
-        //TODO: 这里后期需要改成相对角度
         omni->current_pitch_ = omni->euler_.Pitch();
         omni->current_roll_ = omni->euler_.Roll();
         omni->current_yaw_ = omni->euler_.Yaw();
       }
 
       if (chassis_yaw.Available()) {
-        omni->chassis_yaw_ = -chassis_yaw.GetData();
+        omni->chassis_yaw_ = chassis_yaw.GetData();
         chassis_yaw.StartWaiting();
       }
 
@@ -270,8 +269,7 @@ class Omni {
 
       /*十字跟随云台*/
       case static_cast<uint32_t>(Chassismode::FOLLOW_GIMBAL_CROSS):
-        target_omega_ = pid_follow_.Calculate(
-            0.0f, static_cast<float>(chassis_yaw_ - M_PI / 4.0f), dt_);
+        target_omega_ = pid_follow_.Calculate(0.0f, static_cast<float>(chassis_yaw_ - M_PI / 4.0f), dt_);
         break;
 
       default:
