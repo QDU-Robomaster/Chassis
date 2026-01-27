@@ -35,7 +35,7 @@ class Omni {
     float wheel_radius = 0.065f;
     float wheel_to_center = 0.26f;
     float gravity_height = 0.0f;
-    float reductionratio = 19.764705882352f;  // 减速比
+    float reductionratio = 15.746f;  // 减速比
     float wheel_resistance = 0.0f;    // 轮子阻力
     float error_compensation = 0.0f;  // 误差补偿
     float gravity = 8.54 * 9.8f;
@@ -369,7 +369,7 @@ class Omni {
                   motor_wheel_1_->GetOmega() / PARAM.reductionratio +
                   motor_wheel_2_->GetOmega() / PARAM.reductionratio +
                   motor_wheel_3_->GetOmega() / PARAM.reductionratio) *
-                 SQRT2 * PARAM.wheel_radius / (4.0f * PARAM.wheel_to_center);
+                  PARAM.wheel_radius / (4.0f * PARAM.wheel_to_center);
   }
 
   /**
