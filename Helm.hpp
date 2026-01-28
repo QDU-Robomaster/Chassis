@@ -226,7 +226,7 @@ class Helm {
   }
 
   void PowerControlUpdate() {
-    /*3508电机数mmodeode据*/
+    /*3508电机数据*/
     motor_data_.rotorspeed_rpm_3508[0] = motor_wheel_0_->GetRPM();
     motor_data_.rotorspeed_rpm_3508[1] = motor_wheel_1_->GetRPM();
     motor_data_.rotorspeed_rpm_3508[2] = motor_wheel_2_->GetRPM();
