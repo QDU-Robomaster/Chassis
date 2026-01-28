@@ -9,7 +9,7 @@ required_hardware: []
 depends: []
 === END MANIFEST === */
 // clang-format on
-#include <algorithm>
+
 #include <cmath>
 #include <cstdint>
 
