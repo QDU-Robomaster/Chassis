@@ -78,7 +78,6 @@ class Helm {
        RMMotor *motor_steer_2, RMMotor *motor_steer_3, CMD *cmd,
        PowerControl *power_control, uint32_t task_stack_depth,
        ChassisParam chassis_param, LibXR::PID<float>::Param pid_follow,
-       ChassisParam chassis_param, LibXR::PID<float>::Param pid_follow,
        LibXR::PID<float>::Param pid_velocity_x,
        LibXR::PID<float>::Param pid_velocity_y,
        LibXR::PID<float>::Param pid_omega,
@@ -169,7 +168,6 @@ class Helm {
 
       helm->mutex_.Unlock();
       helm->Output();
-      helm->thread_.Sleep(2);
       helm->thread_.SleepUntil(last_time, 2);
     }
   }
@@ -278,36 +276,35 @@ class Helm {
    * @details 多模式控制底盘
    */
 
-    void Helmcontrol() {
-      const float SQRT2 = 1.41421356237f;
+  void Helmcontrol() {
+    const float SQRT2 = 1.41421356237f;
 
-
-      // 计算 vx,xy
-      switch (chassis_event_) {
-        case static_cast<uint32_t>(Chassismode::RELAX):
-          target_vx_ = 0.0f;
-          target_vy_ = 0.0f;
-          break;
+    // 计算 vx,xy
+    switch (chassis_event_) {
+      case static_cast<uint32_t>(Chassismode::RELAX):
+        target_vx_ = 0.0f;
+        target_vy_ = 0.0f;
+        break;
       case static_cast<uint32_t>(Chassismode::INDEPENDENT):
       case static_cast<uint32_t>(Chassismode::FOLLOW6020):
-          tmp_ = fmaxf(fabsf(cmd_data_.x), fabsf(cmd_data_.y));
-          target_vx_ = 0;
-          target_vy_ = tmp_;
-          if (tmp_ >= 0.01) {
-            direct_offset_ = M_PI_2 - atan2f(cmd_data_.y, cmd_data_.x);
-          } else {
-            direct_offset_ = 0;
-          }
-          break;
+        tmp_ = fmaxf(fabsf(cmd_data_.x), fabsf(cmd_data_.y));
+        target_vx_ = 0;
+        target_vy_ = tmp_;
+        if (tmp_ >= 0.01) {
+          direct_offset_ = M_PI_2 - atan2f(cmd_data_.y, cmd_data_.x);
+        } else {
+          direct_offset_ = 0;
+        }
+        break;
 
-        case static_cast<uint32_t>(Chassismode::FOLLOW):
-        case static_cast<uint32_t>(Chassismode::ROTOR): {
-          float beta = -current_yaw_;
-          float cos_beta = cosf(beta);
-          float sin_beta = sinf(beta);
-          target_vx_ = cos_beta * cmd_data_.x - sin_beta * cmd_data_.y;
-          target_vy_ = sin_beta * cmd_data_.x + cos_beta * cmd_data_.y;
-        } break;
+      case static_cast<uint32_t>(Chassismode::FOLLOW):
+      case static_cast<uint32_t>(Chassismode::ROTOR): {
+        float beta = -current_yaw_;
+        float cos_beta = cosf(beta);
+        float sin_beta = sinf(beta);
+        target_vx_ = cos_beta * cmd_data_.x - sin_beta * cmd_data_.y;
+        target_vy_ = sin_beta * cmd_data_.x + cos_beta * cmd_data_.y;
+      } break;
 
       default:
         target_vx_ = 0.0f;
@@ -315,209 +312,208 @@ class Helm {
         break;
     }
 
-      /* 计算 wz */
-      switch (chassis_event_) {
-        case static_cast<uint32_t>(Chassismode::RELAX):
-          target_omega_ = 0.0f;
-          break;
-        case static_cast<uint32_t>(Chassismode::INDEPENDENT):
-          /* 独立模式每个轮子的方向相同，wz当作轮子转向角速度 */
-          target_omega_ = cmd_data_.z;
-          main_direct_ -= target_omega_ * 6.0f * dt_;  //  6.0为小陀螺转动频率
-          break;
-        case static_cast<uint32_t>(Chassismode::FOLLOW6020):
-          target_omega_ = 0;
-          main_direct_ = current_yaw_;
-          break;
-        case static_cast<uint32_t>(Chassismode::FOLLOW):
-          target_omega_ = -pid_follow_.Calculate(0.0f, current_yaw_, dt_) ;
-          break;
-        case static_cast<uint32_t>(Chassismode::ROTOR):
-          /* 陀螺模式底盘以一定速度旋转 */
-          target_omega_ =- wz_dir_mult_;
-          break;
-        default:
-          target_omega_ = 0.0f;
-          break;
-      }
+    /* 计算 wz */
+    switch (chassis_event_) {
+      case static_cast<uint32_t>(Chassismode::RELAX):
+        target_omega_ = 0.0f;
+        break;
+      case static_cast<uint32_t>(Chassismode::INDEPENDENT):
+        /* 独立模式每个轮子的方向相同，wz当作轮子转向角速度 */
+        target_omega_ = cmd_data_.z;
+        main_direct_ -= target_omega_ * 6.0f * dt_;  //  6.0为小陀螺转动频率
+        break;
+      case static_cast<uint32_t>(Chassismode::FOLLOW6020):
+        target_omega_ = 0;
+        main_direct_ = current_yaw_;
+        break;
+      case static_cast<uint32_t>(Chassismode::FOLLOW):
+        target_omega_ = -pid_follow_.Calculate(0.0f, current_yaw_, dt_);
+        break;
+      case static_cast<uint32_t>(Chassismode::ROTOR):
+        /* 陀螺模式底盘以一定速度旋转 */
+        target_omega_ = -wz_dir_mult_;
+        break;
+      default:
+        target_omega_ = 0.0f;
+        break;
+    }
 
-      /* 计算 */
-      switch (chassis_event_) {
-        case static_cast<uint32_t>(Chassismode::RELAX):
-          for (int i = 0; i < 4; i++) {
-            target_speed_[i] = 0.0f;
-            target_angle_[i] = 0.0;
-          }
-          break;
-        case static_cast<uint32_t>(Chassismode::INDEPENDENT):
-        case static_cast<uint32_t>(Chassismode::FOLLOW6020):
-          for (int i = 0; i < 4; i++) {
-            target_speed_[i] = target_vy_ * motor_max_speed_;
-            target_angle_[i] = main_direct_ + direct_offset_;
-          }
-          break;
-        case static_cast<uint32_t>(Chassismode::FOLLOW):
-        case static_cast<uint32_t>(Chassismode::ROTOR):
-        {
-          float x = 0, y = 0, wheel_pos= 0;
-          for (int i = 0; i < 4; i++) {
-            wheel_pos = -static_cast<float>(i) * static_cast<float>(M_PI_2) +
-                        static_cast<float>(M_PI) / 4.0f * 3.0f;
-            x = -sinf(wheel_pos) * target_omega_ + target_vx_;
-            y = -cosf(wheel_pos) * target_omega_ + target_vy_;
-
-            target_angle_[i] = M_PI_2 - atan2f(y, x);
-            target_speed_[i] = motor_max_speed_ * sqrtf(x * x + y * y) * SQRT2;
-          }
-        } break;
-        default:
-          for (int i = 0; i < 4; i++) {
-            target_speed_[i] = 0.0f;
-            target_angle_[i] = 0.0;
-          }
-          break;
-      }
-      /* 最短路径 */
-      for (int i = 0; i < 4; i++) {
-        switch (i) {
-          case 0:
-            if (fabs(LibXR::CycleValue(motor_steer_0_->GetAngle() - zero_[i]) -
-                     target_angle_[i]) > M_PI_2) {
-              motor_reverse_[i] = true;
-            } else {
-              motor_reverse_[i] = false;
-            }
-            break;
-          case 1:
-            if (fabs(LibXR::CycleValue(motor_steer_1_->GetAngle() - zero_[i]) -
-                     target_angle_[i]) > M_PI_2) {
-              motor_reverse_[i] = true;
-            } else {
-              motor_reverse_[i] = false;
-            }
-            break;
-          case 2:
-            if (fabs(LibXR::CycleValue(motor_steer_2_->GetAngle() - zero_[i]) -
-                     target_angle_[i]) > M_PI_2) {
-              motor_reverse_[i] = true;
-            } else {
-              motor_reverse_[i] = false;
-            }
-            break;
-          case 3:
-            if (fabs(LibXR::CycleValue(motor_steer_3_->GetAngle() - zero_[i]) -
-                     target_angle_[i]) > M_PI_2) {
-              motor_reverse_[i] = true;
-            } else {
-              motor_reverse_[i] = false;
-            }
-            break;
-
-          default:
-            break;
+    /* 计算 */
+    switch (chassis_event_) {
+      case static_cast<uint32_t>(Chassismode::RELAX):
+        for (int i = 0; i < 4; i++) {
+          target_speed_[i] = 0.0f;
+          target_angle_[i] = 0.0;
         }
-      }
-      /* 输出计算 */
-      for (int i = 0; i < 4; i++) {
-        switch (i) {
-          case 0:
-            if (motor_reverse_[i]) {
-              wheel_out_[i] = pid_wheel_omega_[i].Calculate(
-                  -target_speed_[i], motor_wheel_0_->GetRPM(), dt_);
-
-              steer_angle_[i] = pid_steer_angle_[i].Calculate(
-                  LibXR::CycleValue<float>(target_angle_[i] +
-                                           static_cast<float>(M_PI) + zero_[i]),
-                  motor_steer_0_->GetAngle(), dt_);
-              steer_out_[i] = pid_steer_speed_[i].Calculate(
-                  steer_angle_[i],
-                  motor_steer_0_->GetRPM() * static_cast<float>(M_2PI) / 60.0f,
-                  dt_);
-            } else {
-              wheel_out_[i] = pid_wheel_omega_[i].Calculate(
-                  target_speed_[i], motor_wheel_0_->GetRPM(), dt_);
-              steer_angle_[i] = pid_steer_angle_[i].Calculate(
-                  target_angle_[i] + zero_[i], motor_steer_0_->GetAngle(), dt_);
-              steer_out_[i] = pid_steer_speed_[i].Calculate(
-                  steer_angle_[i],
-                  motor_steer_0_->GetRPM() * static_cast<float>(M_2PI) / 60.0f,
-                  dt_);
-            }
-            break;
-          case 1:
-            if (motor_reverse_[i]) {
-              wheel_out_[i] = pid_wheel_omega_[i].Calculate(
-                  -target_speed_[i], motor_wheel_1_->GetRPM(), dt_);
-              steer_angle_[i] = pid_steer_angle_[i].Calculate(
-                  LibXR::CycleValue<float>(target_angle_[i] +
-                                           static_cast<float>(M_PI) + zero_[i]),
-                  motor_steer_1_->GetAngle(), dt_);
-              steer_out_[i] = pid_steer_speed_[i].Calculate(
-                  steer_angle_[i],
-                  motor_steer_1_->GetRPM() * static_cast<float>(M_2PI) / 60.0f,
-                  dt_);
-            } else {
-              wheel_out_[i] = pid_wheel_omega_[i].Calculate(
-                  target_speed_[i], motor_wheel_1_->GetRPM(), dt_);
-              steer_angle_[i] = pid_steer_angle_[i].Calculate(
-                  target_angle_[i] + zero_[i], motor_steer_1_->GetAngle(), dt_);
-              steer_out_[i] = pid_steer_speed_[i].Calculate(
-                  steer_angle_[i],
-                  motor_steer_1_->GetRPM() * static_cast<float>(M_2PI) / 60.0f,
-                  dt_);
-            }
-            break;
-          case 2:
-            if (motor_reverse_[i]) {
-              wheel_out_[i] = pid_wheel_omega_[i].Calculate(
-                  -target_speed_[i], motor_wheel_2_->GetRPM(), dt_);
-              steer_angle_[i] = pid_steer_angle_[i].Calculate(
-                  LibXR::CycleValue<float>(target_angle_[i] +
-                                           static_cast<float>(M_PI) + zero_[i]),
-                  motor_steer_2_->GetAngle(), dt_);
-              steer_out_[i] = pid_steer_speed_[i].Calculate(
-                  steer_angle_[i],
-                  motor_steer_2_->GetRPM() * static_cast<float>(M_2PI) / 60.0f,
-                  dt_);
-            } else {
-              wheel_out_[i] = pid_wheel_omega_[i].Calculate(
-                  target_speed_[i], motor_wheel_2_->GetRPM(), dt_);
-              steer_angle_[i] = pid_steer_angle_[i].Calculate(
-                  target_angle_[i] + zero_[i], motor_steer_2_->GetAngle(), dt_);
-              steer_out_[i] = pid_steer_speed_[i].Calculate(
-                  steer_angle_[i],
-                  motor_steer_2_->GetRPM() * static_cast<float>(M_2PI) / 60.0f,
-                  dt_);
-            }
-            break;
-          case 3:
-            if (motor_reverse_[i]) {
-              wheel_out_[i] = pid_wheel_omega_[i].Calculate(
-                  -target_speed_[i], motor_wheel_3_->GetRPM(), dt_);
-              steer_angle_[i] = pid_steer_angle_[i].Calculate(
-                  LibXR::CycleValue<float>(target_angle_[i] +
-                                           static_cast<float>(M_PI) + zero_[i]),
-                  motor_steer_3_->GetAngle(), dt_);
-              steer_out_[i] = pid_steer_speed_[i].Calculate(
-                  steer_angle_[i],
-                  motor_steer_3_->GetRPM() * static_cast<float>(M_2PI) / 60.0f,
-                  dt_);
-            } else {
-              wheel_out_[i] = pid_wheel_omega_[i].Calculate(
-                  target_speed_[i], motor_wheel_3_->GetRPM(), dt_);
-              steer_angle_[i] = pid_steer_angle_[i].Calculate(
-                  target_angle_[i] + zero_[i], motor_steer_3_->GetAngle(), dt_);
-              steer_out_[i] = pid_steer_speed_[i].Calculate(
-                  steer_angle_[i],
-                  motor_steer_3_->GetRPM() * static_cast<float>(M_2PI) / 60.0f,
-                  dt_);
-            }
-            break;
-          default:
-            break;
+        break;
+      case static_cast<uint32_t>(Chassismode::INDEPENDENT):
+      case static_cast<uint32_t>(Chassismode::FOLLOW6020):
+        for (int i = 0; i < 4; i++) {
+          target_speed_[i] = target_vy_ * motor_max_speed_;
+          target_angle_[i] = main_direct_ + direct_offset_;
         }
+        break;
+      case static_cast<uint32_t>(Chassismode::FOLLOW):
+      case static_cast<uint32_t>(Chassismode::ROTOR): {
+        float x = 0, y = 0, wheel_pos = 0;
+        for (int i = 0; i < 4; i++) {
+          wheel_pos = -static_cast<float>(i) * static_cast<float>(M_PI_2) +
+                      static_cast<float>(M_PI) / 4.0f * 3.0f;
+          x = -sinf(wheel_pos) * target_omega_ + target_vx_;
+          y = -cosf(wheel_pos) * target_omega_ + target_vy_;
+
+          target_angle_[i] = M_PI_2 - atan2f(y, x);
+          target_speed_[i] = motor_max_speed_ * sqrtf(x * x + y * y) * SQRT2;
+        }
+      } break;
+      default:
+        for (int i = 0; i < 4; i++) {
+          target_speed_[i] = 0.0f;
+          target_angle_[i] = 0.0;
+        }
+        break;
+    }
+    /* 最短路径 */
+    for (int i = 0; i < 4; i++) {
+      switch (i) {
+        case 0:
+          if (fabs(LibXR::CycleValue(motor_steer_0_->GetAngle() - zero_[i]) -
+                   target_angle_[i]) > M_PI_2) {
+            motor_reverse_[i] = true;
+          } else {
+            motor_reverse_[i] = false;
+          }
+          break;
+        case 1:
+          if (fabs(LibXR::CycleValue(motor_steer_1_->GetAngle() - zero_[i]) -
+                   target_angle_[i]) > M_PI_2) {
+            motor_reverse_[i] = true;
+          } else {
+            motor_reverse_[i] = false;
+          }
+          break;
+        case 2:
+          if (fabs(LibXR::CycleValue(motor_steer_2_->GetAngle() - zero_[i]) -
+                   target_angle_[i]) > M_PI_2) {
+            motor_reverse_[i] = true;
+          } else {
+            motor_reverse_[i] = false;
+          }
+          break;
+        case 3:
+          if (fabs(LibXR::CycleValue(motor_steer_3_->GetAngle() - zero_[i]) -
+                   target_angle_[i]) > M_PI_2) {
+            motor_reverse_[i] = true;
+          } else {
+            motor_reverse_[i] = false;
+          }
+          break;
+
+        default:
+          break;
       }
     }
+    /* 输出计算 */
+    for (int i = 0; i < 4; i++) {
+      switch (i) {
+        case 0:
+          if (motor_reverse_[i]) {
+            wheel_out_[i] = pid_wheel_omega_[i].Calculate(
+                -target_speed_[i], motor_wheel_0_->GetRPM(), dt_);
+
+            steer_angle_[i] = pid_steer_angle_[i].Calculate(
+                LibXR::CycleValue<float>(target_angle_[i] +
+                                         static_cast<float>(M_PI) + zero_[i]),
+                motor_steer_0_->GetAngle(), dt_);
+            steer_out_[i] = pid_steer_speed_[i].Calculate(
+                steer_angle_[i],
+                motor_steer_0_->GetRPM() * static_cast<float>(M_2PI) / 60.0f,
+                dt_);
+          } else {
+            wheel_out_[i] = pid_wheel_omega_[i].Calculate(
+                target_speed_[i], motor_wheel_0_->GetRPM(), dt_);
+            steer_angle_[i] = pid_steer_angle_[i].Calculate(
+                target_angle_[i] + zero_[i], motor_steer_0_->GetAngle(), dt_);
+            steer_out_[i] = pid_steer_speed_[i].Calculate(
+                steer_angle_[i],
+                motor_steer_0_->GetRPM() * static_cast<float>(M_2PI) / 60.0f,
+                dt_);
+          }
+          break;
+        case 1:
+          if (motor_reverse_[i]) {
+            wheel_out_[i] = pid_wheel_omega_[i].Calculate(
+                -target_speed_[i], motor_wheel_1_->GetRPM(), dt_);
+            steer_angle_[i] = pid_steer_angle_[i].Calculate(
+                LibXR::CycleValue<float>(target_angle_[i] +
+                                         static_cast<float>(M_PI) + zero_[i]),
+                motor_steer_1_->GetAngle(), dt_);
+            steer_out_[i] = pid_steer_speed_[i].Calculate(
+                steer_angle_[i],
+                motor_steer_1_->GetRPM() * static_cast<float>(M_2PI) / 60.0f,
+                dt_);
+          } else {
+            wheel_out_[i] = pid_wheel_omega_[i].Calculate(
+                target_speed_[i], motor_wheel_1_->GetRPM(), dt_);
+            steer_angle_[i] = pid_steer_angle_[i].Calculate(
+                target_angle_[i] + zero_[i], motor_steer_1_->GetAngle(), dt_);
+            steer_out_[i] = pid_steer_speed_[i].Calculate(
+                steer_angle_[i],
+                motor_steer_1_->GetRPM() * static_cast<float>(M_2PI) / 60.0f,
+                dt_);
+          }
+          break;
+        case 2:
+          if (motor_reverse_[i]) {
+            wheel_out_[i] = pid_wheel_omega_[i].Calculate(
+                -target_speed_[i], motor_wheel_2_->GetRPM(), dt_);
+            steer_angle_[i] = pid_steer_angle_[i].Calculate(
+                LibXR::CycleValue<float>(target_angle_[i] +
+                                         static_cast<float>(M_PI) + zero_[i]),
+                motor_steer_2_->GetAngle(), dt_);
+            steer_out_[i] = pid_steer_speed_[i].Calculate(
+                steer_angle_[i],
+                motor_steer_2_->GetRPM() * static_cast<float>(M_2PI) / 60.0f,
+                dt_);
+          } else {
+            wheel_out_[i] = pid_wheel_omega_[i].Calculate(
+                target_speed_[i], motor_wheel_2_->GetRPM(), dt_);
+            steer_angle_[i] = pid_steer_angle_[i].Calculate(
+                target_angle_[i] + zero_[i], motor_steer_2_->GetAngle(), dt_);
+            steer_out_[i] = pid_steer_speed_[i].Calculate(
+                steer_angle_[i],
+                motor_steer_2_->GetRPM() * static_cast<float>(M_2PI) / 60.0f,
+                dt_);
+          }
+          break;
+        case 3:
+          if (motor_reverse_[i]) {
+            wheel_out_[i] = pid_wheel_omega_[i].Calculate(
+                -target_speed_[i], motor_wheel_3_->GetRPM(), dt_);
+            steer_angle_[i] = pid_steer_angle_[i].Calculate(
+                LibXR::CycleValue<float>(target_angle_[i] +
+                                         static_cast<float>(M_PI) + zero_[i]),
+                motor_steer_3_->GetAngle(), dt_);
+            steer_out_[i] = pid_steer_speed_[i].Calculate(
+                steer_angle_[i],
+                motor_steer_3_->GetRPM() * static_cast<float>(M_2PI) / 60.0f,
+                dt_);
+          } else {
+            wheel_out_[i] = pid_wheel_omega_[i].Calculate(
+                target_speed_[i], motor_wheel_3_->GetRPM(), dt_);
+            steer_angle_[i] = pid_steer_angle_[i].Calculate(
+                target_angle_[i] + zero_[i], motor_steer_3_->GetAngle(), dt_);
+            steer_out_[i] = pid_steer_speed_[i].Calculate(
+                steer_angle_[i],
+                motor_steer_3_->GetRPM() * static_cast<float>(M_2PI) / 60.0f,
+                dt_);
+          }
+          break;
+        default:
+          break;
+      }
+    }
+  }
 
   void Output() {
     if (power_control_data_.is_power_limited) {
@@ -543,8 +539,8 @@ class Helm {
     }
   }
 
-   private:
-     const ChassisParam PARAM;
+ private:
+  const ChassisParam PARAM;
 
   float target_vx_ = 0.0f;
   float target_vy_ = 0.0f;
@@ -552,17 +548,17 @@ class Helm {
 
   float tmp_ = 0.0f;
 
-    /* 小陀螺模式旋转方向乘数 */
-    float wz_dir_mult_ = 1.0f;
-    bool motor_reverse_[4]{false, false, false, false};
-    LibXR::CycleValue<float> zero_[4] = {1.11367011, 3.1254859, 0.479369015,
-                                         3.55500054};
+  /* 小陀螺模式旋转方向乘数 */
+  float wz_dir_mult_ = 1.0f;
+  bool motor_reverse_[4]{false, false, false, false};
+  LibXR::CycleValue<float> zero_[4] = {1.11367011, 3.1254859, 0.479369015,
+                                       3.55500054};
 
   float current_yaw_ = 0.0f;
 
-    /* 转子的转速 */
-    float target_speed_[4] = {0.0f, 0.0f, 0.0f, 0.0f};
-    LibXR::CycleValue<float> target_angle_[4] = {0.0f, 0.0f, 0.0f, 0.0f};
+  /* 转子的转速 */
+  float target_speed_[4] = {0.0f, 0.0f, 0.0f, 0.0f};
+  LibXR::CycleValue<float> target_angle_[4] = {0.0f, 0.0f, 0.0f, 0.0f};
 
   /* 输出的电流值 */
   float wheel_out_[4] = {0.0f, 0.0f, 0.0f, 0.0f};
