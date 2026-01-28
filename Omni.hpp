@@ -9,6 +9,7 @@ required_hardware: []
 depends: []
 === END MANIFEST === */
 // clang-format on
+
 #include <cmath>
 #include <cstdint>
 
@@ -24,7 +25,7 @@ depends: []
 #include "message.hpp"
 #include "pid.hpp"
 
-#define OMNI_MOTOR_MAX_OMEGA 50 /* 电机输出轴最大角速度 */
+#define OMNI_MOTOR_MAX_OMEGA 52 /* 电机输出轴最大角速度 */
 
 template <typename ChassisType>
 class Chassis;
@@ -134,7 +135,7 @@ class Omni {
     UNUSED(pid_steer_angle_2);
     UNUSED(pid_steer_angle_3);
     thread_.Create(this, ThreadFunction, "OmniChassisThread", task_stack_depth,
-                   LibXR::Thread::Priority::MEDIUM);
+                   LibXR::Thread::Priority::HIGH);
     hw.template FindOrExit<LibXR::RamFS>({"ramfs"})->Add(cmd_file_);
 
     auto lost_ctrl_callback = LibXR::Callback<uint32_t>::Create(
@@ -193,6 +194,7 @@ class Omni {
       omni->InverseKinematicsSolution();
       omni->DynamicInverseSolution();
       omni->CalculateMotorCurrent();
+      /*需要底盘PID不超调*/
       omni->PowerControlUpdate();
       omni->mutex_.Unlock();
       omni->OutputToDynamics();
@@ -426,39 +428,38 @@ class Omni {
    * @brief 功率控制更新
    */
   void PowerControlUpdate() {
-    /* 获取电机转速 */
-    motor_data_.rotorspeed_rpm_3508[0] = motor_wheel_0_->GetRPM();
-    motor_data_.rotorspeed_rpm_3508[1] = motor_wheel_1_->GetRPM();
-    motor_data_.rotorspeed_rpm_3508[2] = motor_wheel_2_->GetRPM();
-    motor_data_.rotorspeed_rpm_3508[3] = motor_wheel_3_->GetRPM();
+    /*扭矩电流转换为命令电流的比率*/
+    float ratio_3508 =
+        motor_wheel_0_->GetLSB() / motor_wheel_0_->GetCurrentMAX();
 
-    /* 获取当前轮速 */
-    motor_data_.current_motor_omega_3508[0] =
-        motor_wheel_0_->GetOmega() / PARAM.reductionratio;
-    motor_data_.current_motor_omega_3508[1] =
-        motor_wheel_1_->GetOmega() / PARAM.reductionratio;
-    motor_data_.current_motor_omega_3508[2] =
-        motor_wheel_2_->GetOmega() / PARAM.reductionratio;
-    motor_data_.current_motor_omega_3508[3] =
-        motor_wheel_3_->GetOmega() / PARAM.reductionratio;
+    RMMotor *motor_wheels[4] = {motor_wheel_0_, motor_wheel_1_, motor_wheel_2_,
+                                motor_wheel_3_};
 
-    /* 设置目标角速度和输出电流 */
     for (int i = 0; i < 4; i++) {
-      motor_data_.target_motor_omega_3508[i] = target_motor_omega_[i];
-      /* 转换为功率控制需要的电流单位 */
+      motor_data_.rotorspeed_rpm_3508[i] = motor_wheels[i]->GetRPM();
       motor_data_.output_current_3508[i] =
-          output_[i] *
-          (motor_wheel_0_->GetLSB() / PARAM.reductionratio /
-           motor_wheel_0_->KGetTorque() / motor_wheel_0_->GetCurrentMAX());
+          motor_wheels[i]->GetCurrent() * ratio_3508;
     }
 
     /* 设置3508电机数据 */
     power_control_->SetMotorData3508(motor_data_.output_current_3508,
-                                     motor_data_.rotorspeed_rpm_3508,
-                                     motor_data_.target_motor_omega_3508,
-                                     motor_data_.current_motor_omega_3508);
+                                     motor_data_.rotorspeed_rpm_3508);
 
     power_control_->CalculatePowerControlParam();
+
+    /*将扭矩转换为电流的比率*/
+    float ratio_current =
+        (motor_wheel_0_->GetLSB() / PARAM.reductionratio /
+         motor_wheel_0_->KGetTorque() / motor_wheel_0_->GetCurrentMAX());
+
+    for (int i = 0; i < 4; i++) {
+      motor_data_.output_current_3508[i] =
+          std::clamp(output_[i] * ratio_current, -16384.0f, 16384.0f);
+    }
+
+    power_control_->SetMotorData3508(motor_data_.output_current_3508,
+                                     motor_data_.rotorspeed_rpm_3508);
+
     power_control_->OutputLimit(60);
     power_control_data_ = power_control_->GetPowerControlData();
   }
@@ -491,9 +492,11 @@ class Omni {
     if (power_control_data_.is_power_limited) {
       for (int i = 0; i < 4; i++) {
         output_[i] =
-            power_control_data_.new_output_current_3508[i] /
-            (motor_wheel_0_->GetLSB() / PARAM.reductionratio /
-             motor_wheel_0_->KGetTorque() / motor_wheel_0_->GetCurrentMAX());
+            std::clamp(power_control_data_.new_output_current_3508[i] /
+                           (motor_wheel_0_->GetLSB() / PARAM.reductionratio /
+                            motor_wheel_0_->KGetTorque() /
+                            motor_wheel_0_->GetCurrentMAX()),
+                       -6.0f, 6.0f);
       }
     }
     if(chassis_event_==static_cast<uint32_t>(Chassismode::RELAX)){
