@@ -333,7 +333,7 @@ class Omni {
   //TODO: 这里后期需要改成相对角度
     float k = M_PI / 100;
 
-    gx_ff_ = -PARAM.gravity *
+    gx_ff_ = PARAM.gravity *
              SoftDeadzone(sin(current_pitch_) * cos(current_roll_), sin(k));
     gy_ff_ = PARAM.gravity * SoftDeadzone(sin(current_roll_), sin(k));
 
