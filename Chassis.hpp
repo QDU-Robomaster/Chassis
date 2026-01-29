@@ -16,75 +16,76 @@ constructor_args:
   - power_control: '@&power_control'
   - task_stack_depth: 4096
   - ChassisParam:
-      wheel_radius: 0.063
-      wheel_to_center: 0.31
+      wheel_radius: 0.065
+      wheel_to_center: 0.26
       gravity_height: 0.0
       reductionratio: 15.7647
       wheel_resistance: 0.0
       error_compensation: 0.0
-  - pid_follow:
+      gravity: 83.692
+  - pid_follow_:
       k: 1.0
-      p: 0.2
+      p: 20.0
       i: 0.0
       d: 0.0
       i_limit: 0.0
-      out_limit: 0.0
-      cycle: false
+      out_limit: 30.0
+      cycle: true
   - pid_velocity_x_:
-      k: 0.0015
-      p: 14.0
+      k: 1.0
+      p: 20.0
       i: 0.0
       d: 0.0
       i_limit: 0.0
-      out_limit: 0.0
+      out_limit: 30.0
       cycle: false
   - pid_velocity_y_:
-      k: 0.0015
-      p: 14.0
+      k: 1.0
+      p: 20.0
       i: 0.0
       d: 0.0
       i_limit: 0.0
-      out_limit: 0.0
+      out_limit: 30.0
       cycle: false
   - pid_omega_:
-      k: 0.0015
-      p: 14.0
+      k: 1.0
+      p: 20.0
       i: 0.0
       d: 0.0
       i_limit: 0.0
-      out_limit: 0.0
+      out_limit: 30.0
       cycle: false
-  - pid_wheel_angle_0_:
-      k: 0.0001
-      p: 0.02
+  - pid_wheel_speed_0_:
+      k: 1.0
+      p: 0.3
       i: 0.0
       d: 0.0
       i_limit: 0.0
-      out_limit: 0.0
+      out_limit: 5.0
       cycle: false
-  - pid_wheel_angle_1_:
-      k: 0.0001
-      p: 0.02
+  - pid_wheel_speed_1_:
+      k: 1.0
+      p: 0.3
       i: 0.0
       d: 0.0
       i_limit: 0.0
-      out_limit: 0.0
+      out_limit: 5.0
       cycle: false
-  - pid_wheel_angle_2_:
-      k: 0.0001
-      p: 0.02
+  - pid_wheel_speed_2_:
+      k: 1.0
+      p: 0.3
       i: 0.0
       d: 0.0
       i_limit: 0.0
-      out_limit: 0.0
+      out_limit: 5.0
       cycle: false
-  - pid_wheel_angle_3_:
-      k: 0.0001
-      p: 0.02
+  - pid_wheel_speed_3_:
+      k: 1.0
+      p: 0.3
       i: 0.0
       d: 0.0
       i_limit: 0.0
-      out_limit: 0.0
+      out_limit: 5.0
       cycle: false
   - pid_steer_angle_0_:
       k: 1.0
@@ -137,13 +138,9 @@ depends:
 struct MotorData {
   float output_current_3508[4] = {};
   float rotorspeed_rpm_3508[4] = {};
-  float target_motor_omega_3508[4] = {};
-  float current_motor_omega_3508[4] = {};
 
   float output_current_6020[4] = {};
   float rotorspeed_rpm_6020[4] = {};
-  float target_motor_omega_6020[4] = {};
-  float current_motor_omega_6020[4] = {};
 };
 
 #include "CMD.hpp"
@@ -173,6 +170,7 @@ class Chassis : public LibXR::Application {
     float reductionratio = 0.0f;
     float wheel_resistance = 0.0f;
     float error_compensation = 0.0f;
+    float gravity = 0.0f;
   };
 
   Chassis(LibXR::HardwareContainer &hw, LibXR::ApplicationManager &app,
