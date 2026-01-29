@@ -24,6 +24,8 @@ depends: []
 #include "libxr_time.hpp"
 #include "pid.hpp"
 
+#define HELM_CHASSIS_MAX_POWER 60.0f /* 底盘最大功率 */
+
 template <typename ChassisType>
 class Chassis;
 class Helm {
@@ -35,6 +37,7 @@ class Helm {
     float reductionratio = 0.0f;
     float wheel_resistance = 0.0f;
     float error_compensation = 0.0f;
+    float gravity = 0.0f;
   };
   enum class Chassismode : uint8_t {
     RELAX,
@@ -163,7 +166,6 @@ class Helm {
       helm->Update();
       helm->UpdateCMD();
       helm->Helmcontrol();
-      /*需要底盘PID不超调*/
       helm->PowerControlUpdate();
 
       helm->mutex_.Unlock();
@@ -190,6 +192,10 @@ class Helm {
     motor_steer_3_->Update();
   }
 
+  /**
+   * @brief 失去控制处理
+   *
+   */
   void LostCtrl() {
     motor_wheel_0_->Relax();
     motor_wheel_1_->Relax();
@@ -226,6 +232,10 @@ class Helm {
     target_omega_ = cmd_data_.z;
   }
 
+  /**
+   * @brief 功率控制更新
+   *
+   */
   void PowerControlUpdate() {
     /*扭矩电流转换为命令电流的比率*/
     float ratio_3508 =
@@ -267,7 +277,7 @@ class Helm {
     power_control_->SetMotorData6020(motor_data_.output_current_6020,
                                      motor_data_.rotorspeed_rpm_6020);
 
-    power_control_->OutputLimit(35);
+    power_control_->OutputLimit(HELM_CHASSIS_MAX_POWER);
     power_control_data_ = power_control_->GetPowerControlData();
   }
 
@@ -515,6 +525,10 @@ class Helm {
     }
   }
 
+  /**
+   * @brief 输出控制命令到电机
+   *
+   */
   void Output() {
     if (power_control_data_.is_power_limited) {
       for (int i = 0; i < 4; i++) {
@@ -585,7 +599,6 @@ class Helm {
   LibXR::PID<float> pid_follow_;
   LibXR::PID<float> pid_velocity_x_;
   LibXR::PID<float> pid_velocity_y_;
-  /* 此时姑且认为pid_omega_为gimbal_follow的pid */
   LibXR::PID<float> pid_omega_;
 
   LibXR::PID<float> pid_wheel_omega_[4] = {

@@ -26,6 +26,7 @@ depends: []
 #include "pid.hpp"
 
 #define OMNI_MOTOR_MAX_OMEGA 52 /* 电机输出轴最大角速度 */
+#define OMNI_CHASSIS_MAX_POWER 60.0f  /* 底盘最大功率 */
 
 template <typename ChassisType>
 class Chassis;
@@ -39,7 +40,7 @@ class Omni {
     float reductionratio = 15.746f;  // 减速比
     float wheel_resistance = 0.0f;    // 轮子阻力
     float error_compensation = 0.0f;  // 误差补偿
-    float gravity = 8.54 * 9.8f;
+    float gravity = 0.0f;
   };
   enum class Chassismode : uint8_t {
     RELAX,
@@ -194,7 +195,6 @@ class Omni {
       omni->InverseKinematicsSolution();
       omni->DynamicInverseSolution();
       omni->CalculateMotorCurrent();
-      /*需要底盘PID不超调*/
       omni->PowerControlUpdate();
       omni->mutex_.Unlock();
       omni->OutputToDynamics();
@@ -460,7 +460,7 @@ class Omni {
     power_control_->SetMotorData3508(motor_data_.output_current_3508,
                                      motor_data_.rotorspeed_rpm_3508);
 
-    power_control_->OutputLimit(60);
+    power_control_->OutputLimit(OMNI_CHASSIS_MAX_POWER);
     power_control_data_ = power_control_->GetPowerControlData();
   }
 
@@ -511,7 +511,10 @@ class Omni {
     }
 
   }
-
+/**
+ * @brief 失去控制时的处理
+ *
+ */
   void LostCtrl() {
     motor_wheel_0_->Relax();
     motor_wheel_1_->Relax();

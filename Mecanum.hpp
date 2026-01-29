@@ -23,6 +23,7 @@ depends: []
 #include "thread.hpp"
 
 #define MECANUM_MOTOR_MAX_OMEGA 52 /* 电机输出轴最大角速度 */
+#define MECANUM_CHASSIS_MAX_POWER 60.0f /* 底盘最大功率 */
 
 template <typename ChassisType>
 class Chassis;
@@ -36,6 +37,7 @@ class Mecanum {
     float reductionratio = 0.0f;
     float wheel_resistance = 0.0f;
     float error_compensation = 0.0f;
+    float gravity = 0.0f;
   };
 
   enum class Chassismode : uint8_t {
@@ -171,7 +173,6 @@ class Mecanum {
       mecanum->InverseKinematicsSolution();
       mecanum->DynamicInverseSolution();
       mecanum->CalculateMotorCurrent();
-      /*需要底盘PID不超调*/
       mecanum->PowerControlUpdate();
       mecanum->mutex_.Unlock();
       mecanum->OutputToDynamics();
@@ -374,7 +375,7 @@ class Mecanum {
     power_control_->SetMotorData3508(motor_data_.output_current_3508,
                                      motor_data_.rotorspeed_rpm_3508);
 
-    power_control_->OutputLimit(60);
+    power_control_->OutputLimit(MECANUM_CHASSIS_MAX_POWER);
     power_control_data_ = power_control_->GetPowerControlData();
   }
 
@@ -418,6 +419,10 @@ class Mecanum {
     motor_wheel_3_->TorqueControl(output_[3], PARAM.reductionratio);
   }
 
+  /**
+   * @brief 失去控制处理
+   *
+   */
   void LostCtrl() {
     motor_wheel_0_->Relax();
     motor_wheel_1_->Relax();
