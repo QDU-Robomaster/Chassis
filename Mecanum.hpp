@@ -149,10 +149,10 @@ class Mecanum {
     auto last_time = LibXR::Timebase::GetMilliseconds();
 
     LibXR::Topic::ASyncSubscriber<CMD::ChassisCMD> cmd_suber("chassis_cmd");
-    LibXR::Topic::ASyncSubscriber<float> current_yaw_suber("chassis_yaw");
+    LibXR::Topic::ASyncSubscriber<float> yawmotor_angle_suber("yawmotor_angle");
 
     cmd_suber.StartWaiting();
-    current_yaw_suber.StartWaiting();
+    yawmotor_angle_suber.StartWaiting();
 
     mecanum->mutex_.Unlock();
 
@@ -161,9 +161,9 @@ class Mecanum {
         mecanum->cmd_data_ = cmd_suber.GetData();
         cmd_suber.StartWaiting();
       }
-      if (current_yaw_suber.Available()) {
-        mecanum->current_yaw_ = current_yaw_suber.GetData();
-        current_yaw_suber.StartWaiting();
+      if (yawmotor_angle_suber.Available()) {
+        mecanum->current_yaw_ = LibXR::CycleValue<float>(yawmotor_angle_suber.GetData()-mecanum->yawmotor_zero_);
+        yawmotor_angle_suber.StartWaiting();
       }
 
       mecanum->mutex_.Lock();
@@ -446,6 +446,7 @@ class Mecanum {
   float target_vy_ = 0.0f;
   float target_omega_ = 0.0f;
   float current_yaw_ = 0.0f;
+  float yawmotor_zero_ = 0.959505022f;
 
   float dt_ = 0;
   LibXR::MicrosecondTimestamp last_online_time_ = 0;
