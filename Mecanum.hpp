@@ -128,7 +128,7 @@ class Mecanum {
     UNUSED(pid_steer_angle_2);
     UNUSED(pid_steer_angle_3);
     thread_.Create(this, ThreadFunction, "MecanumChassisThread",
-                   task_stack_depth, LibXR::Thread::Priority::HIGH);
+                   task_stack_depth, LibXR::Thread::Priority::MEDIUM);
     auto lost_ctrl_callback = LibXR::Callback<uint32_t>::Create(
         [](bool in_isr, Mecanum *mecanum, uint32_t event_id) {
           UNUSED(in_isr);
@@ -146,7 +146,6 @@ class Mecanum {
    */
   static void ThreadFunction(Mecanum *mecanum) {
     mecanum->mutex_.Lock();
-    auto last_time = LibXR::Timebase::GetMilliseconds();
 
     LibXR::Topic::ASyncSubscriber<CMD::ChassisCMD> cmd_suber("chassis_cmd");
     LibXR::Topic::ASyncSubscriber<float> yawmotor_angle_suber("yawmotor_angle");
@@ -177,7 +176,7 @@ class Mecanum {
       mecanum->mutex_.Unlock();
       mecanum->OutputToDynamics();
 
-      mecanum->thread_.SleepUntil(last_time, 2);
+      mecanum->thread_.Sleep(2);
     }
   }
 

@@ -137,7 +137,7 @@ class Omni {
     UNUSED(pid_steer_angle_2);
     UNUSED(pid_steer_angle_3);
     thread_.Create(this, ThreadFunction, "OmniChassisThread", task_stack_depth,
-                   LibXR::Thread::Priority::HIGH);
+                   LibXR::Thread::Priority::MEDIUM);
     hw.template FindOrExit<LibXR::RamFS>({"ramfs"})->Add(cmd_file_);
 
     auto lost_ctrl_callback = LibXR::Callback<uint32_t>::Create(
@@ -157,7 +157,6 @@ class Omni {
    */
   static void ThreadFunction(Omni *omni) {
     omni->mutex_.Lock();
-    auto last_time = LibXR::Timebase::GetMilliseconds();
 
     LibXR::Topic::ASyncSubscriber<CMD::ChassisCMD> cmd_suber("chassis_cmd");
     LibXR::Topic::ASyncSubscriber<LibXR::EulerAngle<float>> euler_suber(
@@ -198,7 +197,7 @@ class Omni {
       omni->PowerControlUpdate();
       omni->mutex_.Unlock();
       omni->OutputToDynamics();
-      omni->thread_.SleepUntil(last_time,2);
+      omni->thread_.Sleep(2);
     }
   }
 

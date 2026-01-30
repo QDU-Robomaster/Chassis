@@ -124,7 +124,7 @@ class Helm {
     UNUSED(hw);
     UNUSED(app);
     thread_.Create(this, ThreadFunction, "HelmChassisThread", task_stack_depth,
-                   LibXR::Thread::Priority::HIGH);
+                   LibXR::Thread::Priority::MEDIUM);
     auto lost_ctrl_callback = LibXR::Callback<uint32_t>::Create(
         [](bool in_isr, Helm *helm, uint32_t event_id) {
           UNUSED(in_isr);
@@ -142,7 +142,6 @@ class Helm {
    */
   static void ThreadFunction(Helm *helm) {
     helm->mutex_.Lock();
-    auto last_time = LibXR::Timebase::GetMilliseconds();
 
     LibXR::Topic::ASyncSubscriber<CMD::ChassisCMD> cmd_suber("chassis_cmd");
     LibXR::Topic::ASyncSubscriber<float> yawmotor_angle_suber("yawmotor_angle");
@@ -170,7 +169,7 @@ class Helm {
 
       helm->mutex_.Unlock();
       helm->Output();
-      helm->thread_.SleepUntil(last_time, 2);
+      helm->thread_.Sleep(2);
     }
   }
   /**
