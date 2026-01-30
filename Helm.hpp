@@ -145,10 +145,10 @@ class Helm {
     auto last_time = LibXR::Timebase::GetMilliseconds();
 
     LibXR::Topic::ASyncSubscriber<CMD::ChassisCMD> cmd_suber("chassis_cmd");
-    LibXR::Topic::ASyncSubscriber<float> current_yaw_suber("chassis_yaw");
+    LibXR::Topic::ASyncSubscriber<float> yawmotor_angle_suber("yawmotor_angle");
 
     cmd_suber.StartWaiting();
-    current_yaw_suber.StartWaiting();
+    yawmotor_angle_suber.StartWaiting();
 
     helm->mutex_.Unlock();
     while (true) {
@@ -157,9 +157,9 @@ class Helm {
         cmd_suber.StartWaiting();
       }
 
-      if (current_yaw_suber.Available()) {
-        helm->current_yaw_ = current_yaw_suber.GetData();
-        current_yaw_suber.StartWaiting();
+      if (yawmotor_angle_suber.Available()) {
+        helm->current_yaw_ = LibXR::CycleValue<float>(yawmotor_angle_suber.GetData()-helm->yawmotor_zero_);
+        yawmotor_angle_suber.StartWaiting();
       }
 
       helm->mutex_.Lock();
@@ -569,6 +569,7 @@ class Helm {
                                        3.55500054};
 
   float current_yaw_ = 0.0f;
+  float yawmotor_zero_=3.89784527;
 
   /* 转子的转速 */
   float target_speed_[4] = {0.0f, 0.0f, 0.0f, 0.0f};

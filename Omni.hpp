@@ -18,6 +18,7 @@ depends: []
 #include "PowerControl.hpp"
 #include "RMMotor.hpp"
 #include "app_framework.hpp"
+#include "cycle_value.hpp"
 #include "event.hpp"
 #include "libxr_def.hpp"
 #include "libxr_rw.hpp"
@@ -161,12 +162,11 @@ class Omni {
     LibXR::Topic::ASyncSubscriber<CMD::ChassisCMD> cmd_suber("chassis_cmd");
     LibXR::Topic::ASyncSubscriber<LibXR::EulerAngle<float>> euler_suber(
         "ahrs_euler");
-    LibXR::Topic::ASyncSubscriber<float> chassis_yaw("chassis_yaw");
+    LibXR::Topic::ASyncSubscriber<float> yawmotor_angle_suber("yawmotor_angle");
 
     cmd_suber.StartWaiting();
     euler_suber.StartWaiting();
-    chassis_yaw.StartWaiting();
-
+    yawmotor_angle_suber.StartWaiting();
     omni->mutex_.Unlock();
 
     while (true) {
@@ -183,9 +183,9 @@ class Omni {
         omni->current_yaw_ = omni->euler_.Yaw();
       }
 
-      if (chassis_yaw.Available()) {
-        omni->chassis_yaw_ = chassis_yaw.GetData();
-        chassis_yaw.StartWaiting();
+      if (yawmotor_angle_suber.Available()) {
+        omni->chassis_yaw_ = LibXR::CycleValue<float>(yawmotor_angle_suber.GetData()-omni->yawmotor_zero_);
+        yawmotor_angle_suber.StartWaiting();
       }
 
       omni->mutex_.Lock();
@@ -616,7 +616,7 @@ class Omni {
   float chassis_yaw_ = 0.0f;
   float torque_ff_[4]{0.0, 0.0, 0.0, 0.0};
   float baseff_[4]{0.0, 0.0, 0.0, 0.0};
-
+  float yawmotor_zero_ = 5.66203833f;
   float gx_ff_;
   float gy_ff_;
   float dt_ = 0;
