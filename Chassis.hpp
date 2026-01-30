@@ -152,42 +152,34 @@ struct MotorData {
 #include "libxr_def.hpp"
 #include "pid.hpp"
 
-enum class ChassisEvent : uint8_t {
-  SET_MODE_RELAX,
-  SET_MODE_FOLLOW,
-  SET_MODE_ROTOR,
-  SET_MODE_6020_FOLLOW,
-  SET_MODE_INDEPENDENT,
-};
-
 template <typename ChassisType>
 class Chassis : public LibXR::Application {
  public:
+  using ChassisMode = typename ChassisType::ChassisMode;
   struct ChassisParam {
     float wheel_radius = 0.0f;
     float wheel_to_center = 0.0f;
     float gravity_height = 0.0f;
-    float reductionratio = 0.0f;
+    float reduction_ratio = 0.0f;
     float wheel_resistance = 0.0f;
     float error_compensation = 0.0f;
     float gravity = 0.0f;
   };
 
   Chassis(LibXR::HardwareContainer &hw, LibXR::ApplicationManager &app,
-          RMMotor *motor_wheel_0, RMMotor *motor_wheel_1,
-          RMMotor *motor_wheel_2, RMMotor *motor_wheel_3,
-          RMMotor *motor_steer_0, RMMotor *motor_steer_1,
-          RMMotor *motor_steer_2, RMMotor *motor_steer_3, CMD *cmd,
+          Motor *motor_wheel_0, Motor *motor_wheel_1, Motor *motor_wheel_2,
+          Motor *motor_wheel_3, Motor *motor_steer_0, Motor *motor_steer_1,
+          Motor *motor_steer_2, Motor *motor_steer_3, CMD *cmd,
           PowerControl *power_control, uint32_t task_stack_depth,
           ChassisParam chassis_param = {},
           LibXR::PID<float>::Param pid_follow_ = {},
           LibXR::PID<float>::Param pid_velocity_x_ = {},
           LibXR::PID<float>::Param pid_velocity_y_ = {},
           LibXR::PID<float>::Param pid_omega_ = {},
-          LibXR::PID<float>::Param pid_wheel_angle_0_ = {},
-          LibXR::PID<float>::Param pid_wheel_angle_1_ = {},
-          LibXR::PID<float>::Param pid_wheel_angle_2_ = {},
-          LibXR::PID<float>::Param pid_wheel_angle_3_ = {},
+          LibXR::PID<float>::Param pid_wheel_speed_0_ = {},
+          LibXR::PID<float>::Param pid_wheel_speed_1_ = {},
+          LibXR::PID<float>::Param pid_wheel_speed_2_ = {},
+          LibXR::PID<float>::Param pid_wheel_speed_3_ = {},
           LibXR::PID<float>::Param pid_steer_angle_0_ = {},
           LibXR::PID<float>::Param pid_steer_angle_1_ = {},
           LibXR::PID<float>::Param pid_steer_angle_2_ = {},
@@ -196,19 +188,20 @@ class Chassis : public LibXR::Application {
           LibXR::PID<float>::Param pid_steer_speed_1_ = {},
           LibXR::PID<float>::Param pid_steer_speed_2_ = {},
           LibXR::PID<float>::Param pid_steer_speed_3_ = {})
-      : chassis_(hw, app, motor_wheel_0, motor_wheel_1, motor_wheel_2,
-                 motor_wheel_3, motor_steer_0, motor_steer_1, motor_steer_2,
-                 motor_steer_3, cmd, power_control, task_stack_depth,
-                 typename ChassisType::ChassisParam{
-                     chassis_param.wheel_radius, chassis_param.wheel_to_center,
-                     chassis_param.gravity_height, chassis_param.reductionratio,
-                     chassis_param.wheel_resistance,
-                     chassis_param.error_compensation},
-                 pid_follow_, pid_velocity_x_, pid_velocity_y_, pid_omega_,
-                 pid_wheel_angle_0_, pid_wheel_angle_1_, pid_wheel_angle_2_,
-                 pid_wheel_angle_3_, pid_steer_angle_0_, pid_steer_angle_1_,
-                 pid_steer_angle_2_, pid_steer_angle_3_, pid_steer_speed_0_,
-                 pid_steer_speed_1_, pid_steer_speed_2_, pid_steer_speed_3_) {
+      : chassis_(
+            hw, app, motor_wheel_0, motor_wheel_1, motor_wheel_2, motor_wheel_3,
+            motor_steer_0, motor_steer_1, motor_steer_2, motor_steer_3, cmd,
+            power_control, task_stack_depth,
+            typename ChassisType::ChassisParam{
+                chassis_param.wheel_radius, chassis_param.wheel_to_center,
+                chassis_param.gravity_height, chassis_param.reduction_ratio,
+                chassis_param.wheel_resistance,
+                chassis_param.error_compensation},
+            pid_follow_, pid_velocity_x_, pid_velocity_y_, pid_omega_,
+            pid_wheel_speed_0_, pid_wheel_speed_1_, pid_wheel_speed_2_,
+            pid_wheel_speed_3_, pid_steer_angle_0_, pid_steer_angle_1_,
+            pid_steer_angle_2_, pid_steer_angle_3_, pid_steer_speed_0_,
+            pid_steer_speed_1_, pid_steer_speed_2_, pid_steer_speed_3_) {
     auto callback = LibXR::Callback<uint32_t>::Create(
         [](bool in_isr, Chassis *chassis, uint32_t event_id) {
           UNUSED(in_isr);
@@ -216,13 +209,16 @@ class Chassis : public LibXR::Application {
         },
         this);
 
-    chassis_event_.Register(static_cast<uint32_t>(ChassisEvent::SET_MODE_RELAX),callback);
+    chassis_event_.Register(static_cast<uint32_t>(ChassisMode::RELAX),
+                            callback);
 
-    chassis_event_.Register(static_cast<uint32_t>(ChassisEvent::SET_MODE_INDEPENDENT), callback);
+    chassis_event_.Register(static_cast<uint32_t>(ChassisMode::INDEPENDENT),
+                            callback);
 
-    chassis_event_.Register(static_cast<uint32_t>(ChassisEvent::SET_MODE_ROTOR), callback);
-
-    chassis_event_.Register(static_cast<uint32_t>(ChassisEvent::SET_MODE_FOLLOW), callback);
+    chassis_event_.Register(static_cast<uint32_t>(ChassisMode::ROTOR),
+                            callback);
+    chassis_event_.Register(static_cast<uint32_t>(ChassisMode::FOLLOW),
+                            callback);
   }
 
   /**
@@ -236,10 +232,7 @@ class Chassis : public LibXR::Application {
    * @brief 事件处理器，根据传入的事件ID执行相应操作
    * @param event_id 触发的事件ID
    */
-  void EventHandler(uint32_t event_id) {
-    chassis_.SetMode(
-        static_cast<uint32_t>(static_cast<ChassisEvent>(event_id)));
-  }
+  void EventHandler(uint32_t event_id) { chassis_.SetMode(event_id); }
 
   void OnMonitor() override {}
 
