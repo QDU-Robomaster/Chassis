@@ -152,7 +152,7 @@ class Omni {
     }
 
     thread_.Create(this, ThreadFunction, "OmniChassisThread", task_stack_depth,
-                   LibXR::Thread::Priority::HIGH);
+                   LibXR::Thread::Priority::MEDIUM);
     hw.template FindOrExit<LibXR::RamFS>({"ramfs"})->Add(cmd_file_);
 
     auto lost_ctrl_callback = LibXR::Callback<uint32_t>::Create(

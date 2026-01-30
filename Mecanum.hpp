@@ -142,7 +142,7 @@ class Mecanum {
     }
 
     thread_.Create(this, ThreadFunction, "MecanumChassisThread",
-                   task_stack_depth, LibXR::Thread::Priority::HIGH);
+                   task_stack_depth, LibXR::Thread::Priority::MEDIUM);
     auto lost_ctrl_callback = LibXR::Callback<uint32_t>::Create(
         [](bool in_isr, Mecanum *mecanum, uint32_t event_id) {
           UNUSED(in_isr);

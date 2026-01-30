@@ -149,7 +149,7 @@ class Helm {
     }
 
     thread_.Create(this, ThreadFunction, "HelmChassisThread", task_stack_depth,
-                   LibXR::Thread::Priority::HIGH);
+                   LibXR::Thread::Priority::MEDIUM);
     auto lost_ctrl_callback = LibXR::Callback<uint32_t>::Create(
         [](bool in_isr, Helm *helm, uint32_t event_id) {
           UNUSED(in_isr);
