@@ -46,12 +46,18 @@ jobs:
           repository: QDU-Robomaster/CMD
           path: bsp-dev-c/Modules/CMD
 
+      - name: Checkout Motor module
+        uses: actions/checkout@v4
+        with:
+          repository: QDU-Robomaster/Motor
+          path: bsp-dev-c/Modules/Motor
+
       - name: Checkout PowerControl module
         uses: actions/checkout@v4
         with:
           repository: QDU-Robomaster/PowerControl
           path: bsp-dev-c/Modules/PowerControl
-          
+
       - name: Checkout SuperPower module
         uses: actions/checkout@v4
         with:
