@@ -15,6 +15,7 @@ depends: []
 
 #include "CMD.hpp"
 #include "Chassis.hpp"
+#include "Motor.hpp"
 #include "PowerControl.hpp"
 #include "RMMotor.hpp"
 #include "app_framework.hpp"
@@ -26,8 +27,11 @@ depends: []
 #include "message.hpp"
 #include "pid.hpp"
 
-#define OMNI_MOTOR_MAX_OMEGA 52 /* 电机输出轴最大角速度 */
-#define OMNI_CHASSIS_MAX_POWER 60.0f  /* 底盘最大功率 */
+#define M3508_NM_TO_LSB_RATIO \
+  52437.5f /* 3508转子扭矩转化为电机控制单位的比例 */
+
+#define OMNI_MOTOR_MAX_OMEGA 52      /* 电机输出轴最大角速度 */
+#define OMNI_CHASSIS_MAX_POWER 60.0f /* 底盘最大功率 */
 
 template <typename ChassisType>
 class Chassis;
@@ -35,20 +39,19 @@ class Chassis;
 class Omni {
  public:
   struct ChassisParam {
-    float wheel_radius = 0.065f;
-    float wheel_to_center = 0.26f;
+    float wheel_radius = 0.0f;
+    float wheel_to_center = 0.0f;
     float gravity_height = 0.0f;
-    float reductionratio = 15.746f;  // 减速比
-    float wheel_resistance = 0.0f;    // 轮子阻力
-    float error_compensation = 0.0f;  // 误差补偿
+    float reduction_ratio = 0.0f;
+    float wheel_resistance = 0.0f;
+    float error_compensation = 0.0f;
     float gravity = 0.0f;
   };
-  enum class Chassismode : uint8_t {
+  enum class ChassisMode : uint8_t {
     RELAX,
     INDEPENDENT,
     ROTOR,
-    FOLLOW_GIMBAL_INTERSECT,
-    FOLLOW_GIMBAL_CROSS,
+    FOLLOW,
   };
   struct Eulerangle {
     LibXR::EulerAngle<float> roll;
@@ -84,18 +87,18 @@ class Omni {
    * @param pid_steer_angle_3 舵机3角度PID参数（本底盘未使用）
    */
   Omni(LibXR::HardwareContainer &hw, LibXR::ApplicationManager &app,
-       RMMotor *motor_wheel_0, RMMotor *motor_wheel_1, RMMotor *motor_wheel_2,
-       RMMotor *motor_wheel_3, RMMotor *motor_steer_0, RMMotor *motor_steer_1,
-       RMMotor *motor_steer_2, RMMotor *motor_steer_3, CMD *cmd,
+       Motor *motor_wheel_0, Motor *motor_wheel_1, Motor *motor_wheel_2,
+       Motor *motor_wheel_3, Motor *motor_steer_0, Motor *motor_steer_1,
+       Motor *motor_steer_2, Motor *motor_steer_3, CMD *cmd,
        PowerControl *power_control, uint32_t task_stack_depth,
        ChassisParam chassis_param, LibXR::PID<float>::Param pid_follow,
        LibXR::PID<float>::Param pid_velocity_x,
        LibXR::PID<float>::Param pid_velocity_y,
        LibXR::PID<float>::Param pid_omega,
-       LibXR::PID<float>::Param pid_wheel_omega_0,
-       LibXR::PID<float>::Param pid_wheel_omega_1,
-       LibXR::PID<float>::Param pid_wheel_omega_2,
-       LibXR::PID<float>::Param pid_wheel_omega_3,
+       LibXR::PID<float>::Param pid_wheel_speed_0,
+       LibXR::PID<float>::Param pid_wheel_speed_1,
+       LibXR::PID<float>::Param pid_wheel_speed_2,
+       LibXR::PID<float>::Param pid_wheel_speed_3,
        LibXR::PID<float>::Param pid_steer_angle_0,
        LibXR::PID<float>::Param pid_steer_angle_1,
        LibXR::PID<float>::Param pid_steer_angle_2,
@@ -113,8 +116,8 @@ class Omni {
         pid_velocity_x_(pid_velocity_x), /*    ➘    │     ➚    */
         pid_velocity_y_(pid_velocity_y), /*wheel1   │    wheel2*/
         pid_omega_(pid_omega),
-        pid_wheel_omega_{pid_wheel_omega_0, pid_wheel_omega_1,
-                         pid_wheel_omega_2, pid_wheel_omega_3},
+        pid_wheel_speed_{pid_wheel_speed_0, pid_wheel_speed_1,
+                         pid_wheel_speed_2, pid_wheel_speed_3},
         pid_steer_angle_{pid_steer_angle_0, pid_steer_angle_1,
                          pid_steer_angle_2, pid_steer_angle_3},
         pid_steer_speed_{pid_steer_speed_0, pid_steer_speed_1,
@@ -136,6 +139,17 @@ class Omni {
     UNUSED(pid_steer_angle_1);
     UNUSED(pid_steer_angle_2);
     UNUSED(pid_steer_angle_3);
+
+    for (int i = 0; i < 4; i++) {
+      motor_cmd_[i].mode = Motor::ControlMode::MODE_TORQUE;
+      motor_cmd_[i].reduction_ratio = chassis_param.reduction_ratio;
+      motor_cmd_[i].torque = 0.0f;
+      motor_cmd_[i].position = 0.0f;
+      motor_cmd_[i].velocity = 0.0f;
+      motor_cmd_[i].kp = 0.0f;
+      motor_cmd_[i].kd = 0.0f;
+    }
+
     thread_.Create(this, ThreadFunction, "OmniChassisThread", task_stack_depth,
                    LibXR::Thread::Priority::HIGH);
     hw.template FindOrExit<LibXR::RamFS>({"ramfs"})->Add(cmd_file_);
@@ -157,7 +171,6 @@ class Omni {
    */
   static void ThreadFunction(Omni *omni) {
     omni->mutex_.Lock();
-    auto last_time = LibXR::Timebase::GetMilliseconds();
 
     LibXR::Topic::ASyncSubscriber<CMD::ChassisCMD> cmd_suber("chassis_cmd");
     LibXR::Topic::ASyncSubscriber<LibXR::EulerAngle<float>> euler_suber(
@@ -198,7 +211,8 @@ class Omni {
       omni->PowerControlUpdate();
       omni->mutex_.Unlock();
       omni->OutputToDynamics();
-      omni->thread_.SleepUntil(last_time,2);
+
+      omni->thread_.Sleep(2);
     }
   }
 
@@ -211,10 +225,10 @@ class Omni {
     dt_ = (now - last_online_time_).ToSecondf();
     last_online_time_ = now;
 
-    motor_wheel_0_->Update();
-    motor_wheel_1_->Update();
-    motor_wheel_2_->Update();
-    motor_wheel_3_->Update();
+    for (int i = 0; i < 4; i++) {
+      motor_wheel_[i]->Update();
+      motor_feedback_[i] = motor_wheel_[i]->GetFeedback();
+    }
   }
 
   /**
@@ -223,14 +237,13 @@ class Omni {
    */
   void SetMode(uint32_t mode) {
     mutex_.Lock();
-    chassis_event_ = mode;
+    chassis_event_ = static_cast<ChassisMode>(mode);
     pid_omega_.Reset();
     pid_velocity_x_.Reset();
     pid_velocity_y_.Reset();
-    pid_wheel_omega_[0].Reset();
-    pid_wheel_omega_[1].Reset();
-    pid_wheel_omega_[2].Reset();
-    pid_wheel_omega_[3].Reset();
+    for (int i = 0; i < 4; i++) {
+      pid_wheel_speed_[i].Reset();
+    }
 
     mutex_.Unlock();
   }
@@ -240,35 +253,27 @@ class Omni {
    * @details 从CMD获取底盘控制指令，并转换为目标速度
    */
   void UpdateCMD() {
+    float max_v = PARAM.wheel_radius * OMNI_MOTOR_MAX_OMEGA;
 
+    /*计算omega*/
     switch (chassis_event_) {
-      /*放松模式 不输出*/
-      case static_cast<uint32_t>(Chassismode::RELAX):
+      case ChassisMode::RELAX:
         target_vx_ = 0.0f;
         target_vy_ = 0.0f;
         target_omega_ = 0.0f;
         break;
 
-        /*独立模式*/
-      case static_cast<uint32_t>(Chassismode::INDEPENDENT):
-        target_omega_ = PARAM.wheel_radius * OMNI_MOTOR_MAX_OMEGA *
-                        cmd_data_.z / PARAM.wheel_to_center;
+      case ChassisMode::INDEPENDENT:
+        target_omega_ = max_v * cmd_data_.z / PARAM.wheel_to_center;
         break;
 
-        /*小陀螺*/
-      case static_cast<uint32_t>(Chassismode::ROTOR):
-        target_omega_ = -static_cast<float>(
-            PARAM.wheel_radius * OMNI_MOTOR_MAX_OMEGA / PARAM.wheel_to_center);
+      case ChassisMode::ROTOR:
+        target_omega_ = -static_cast<float>(max_v / PARAM.wheel_to_center);
         break;
 
         /*正方向跟随云台*/
-      case static_cast<uint32_t>(Chassismode::FOLLOW_GIMBAL_INTERSECT):
+      case ChassisMode::FOLLOW:
         target_omega_ = -pid_follow_.Calculate(0.0f, chassis_yaw_, dt_);
-        break;
-
-      /*十字跟随云台*/
-      case static_cast<uint32_t>(Chassismode::FOLLOW_GIMBAL_CROSS):
-        target_omega_ = -pid_follow_.Calculate(0.0f, static_cast<float>(chassis_yaw_ - M_PI / 4.0f), dt_);
         break;
 
       default:
@@ -277,31 +282,25 @@ class Omni {
 
     /* 计算vx,vy */
     switch (chassis_event_) {
-      case static_cast<uint32_t>(Chassismode::RELAX):
+      case ChassisMode::RELAX:
         target_vx_ = 0.0f;
         target_vy_ = 0.0f;
         break;
-      case static_cast<uint32_t>(Chassismode::ROTOR):
-      case static_cast<uint32_t>(Chassismode::FOLLOW_GIMBAL_CROSS):
-      case static_cast<uint32_t>(Chassismode::FOLLOW_GIMBAL_INTERSECT):{
+      case ChassisMode::ROTOR:
+      case ChassisMode::FOLLOW: {
         float beta = chassis_yaw_;
         float cos_beta = cosf(beta);
         float sin_beta = sinf(beta);
-        target_vx_ = (cos_beta * cmd_data_.x * PARAM.wheel_radius *
-                          OMNI_MOTOR_MAX_OMEGA -
-                      sin_beta * cmd_data_.y * PARAM.wheel_radius *
-                          OMNI_MOTOR_MAX_OMEGA);
-        target_vy_ = (sin_beta * cmd_data_.x * PARAM.wheel_radius *
-                          OMNI_MOTOR_MAX_OMEGA +
-                      cos_beta * cmd_data_.y * PARAM.wheel_radius *
-                          OMNI_MOTOR_MAX_OMEGA);
-    }
-    break;
-      case static_cast<uint32_t>(Chassismode::INDEPENDENT): {
+        target_vx_ =
+            (cos_beta * cmd_data_.x * max_v - sin_beta * cmd_data_.y * max_v);
+        target_vy_ =
+            (sin_beta * cmd_data_.x * max_v + cos_beta * cmd_data_.y * max_v);
+      } break;
+      case ChassisMode::INDEPENDENT: {
         const float SQRT2 = 1.41421356237f;
-        float s = fabsf(cmd_data_.x) + fabsf(cmd_data_.y);  // 适配菱形速度
-        float k = (s <= 1.0f) ? (PARAM.wheel_radius * OMNI_MOTOR_MAX_OMEGA)
-                              : ((PARAM.wheel_radius * OMNI_MOTOR_MAX_OMEGA) / s);
+        /* 适配菱形速度 */
+        float s = fabsf(cmd_data_.x) + fabsf(cmd_data_.y);
+        float k = (s <= 1.0f) ? max_v : (max_v / s);
         target_vx_ = SQRT2 * k * cmd_data_.x;
         target_vy_ = SQRT2 * k * cmd_data_.y;
       } break;
@@ -330,7 +329,7 @@ class Omni {
    *
    */
   void FeedForward() {
-  //TODO: 这里后期需要改成相对角度
+    // TODO: 这里后期需要改成相对角度
     float k = M_PI / 100;
 
     gx_ff_ = PARAM.gravity *
@@ -355,23 +354,24 @@ class Omni {
    */
   void SelfResolution() {
     const float SQRT2 = 1.41421356237f;
-    now_vx_ = (motor_wheel_0_->GetOmega() / PARAM.reductionratio -
-               motor_wheel_1_->GetOmega() / PARAM.reductionratio -
-               motor_wheel_2_->GetOmega() / PARAM.reductionratio +
-               motor_wheel_3_->GetOmega() / PARAM.reductionratio) *
+
+    now_vx_ = (motor_feedback_[0].omega / PARAM.reduction_ratio -
+               motor_feedback_[1].omega / PARAM.reduction_ratio -
+               motor_feedback_[2].omega / PARAM.reduction_ratio +
+               motor_feedback_[3].omega / PARAM.reduction_ratio) *
               SQRT2 * PARAM.wheel_radius / 4.0f;
 
-    now_vy_ = (motor_wheel_0_->GetOmega() / PARAM.reductionratio +
-               motor_wheel_1_->GetOmega() / PARAM.reductionratio -
-               motor_wheel_2_->GetOmega() / PARAM.reductionratio -
-               motor_wheel_3_->GetOmega() / PARAM.reductionratio) *
+    now_vy_ = (motor_feedback_[0].omega / PARAM.reduction_ratio +
+               motor_feedback_[1].omega / PARAM.reduction_ratio -
+               motor_feedback_[2].omega / PARAM.reduction_ratio -
+               motor_feedback_[3].omega / PARAM.reduction_ratio) *
               SQRT2 * PARAM.wheel_radius / 4.0f;
 
-    now_omega_ = (motor_wheel_0_->GetOmega() / PARAM.reductionratio +
-                  motor_wheel_1_->GetOmega() / PARAM.reductionratio +
-                  motor_wheel_2_->GetOmega() / PARAM.reductionratio +
-                  motor_wheel_3_->GetOmega() / PARAM.reductionratio) *
-                  PARAM.wheel_radius / (4.0f * PARAM.wheel_to_center);
+    now_omega_ = (motor_feedback_[0].omega / PARAM.reduction_ratio +
+                  motor_feedback_[1].omega / PARAM.reduction_ratio +
+                  motor_feedback_[2].omega / PARAM.reduction_ratio +
+                  motor_feedback_[3].omega / PARAM.reduction_ratio) *
+                 PARAM.wheel_radius / (4.0f * PARAM.wheel_to_center);
   }
 
   /**
@@ -399,27 +399,20 @@ class Omni {
    * @brief 计算 PID 输出电流
    */
   void CalculateMotorCurrent() {
-    if (chassis_event_ == static_cast<uint32_t>(Chassismode::RELAX)) {
+    if (chassis_event_ == ChassisMode::RELAX) {
       LostCtrl();
     } else {
-      // 计算速度环 PID
-      target_motor_current_[0] = pid_wheel_omega_[0].Calculate(
-          target_motor_omega_[0],
-          motor_wheel_0_->GetOmega() / PARAM.reductionratio, dt_);
-      target_motor_current_[1] = pid_wheel_omega_[1].Calculate(
-          target_motor_omega_[1],
-          motor_wheel_1_->GetOmega() / PARAM.reductionratio, dt_);
-      target_motor_current_[2] = pid_wheel_omega_[2].Calculate(
-          target_motor_omega_[2],
-          motor_wheel_2_->GetOmega() / PARAM.reductionratio, dt_);
-      target_motor_current_[3] = pid_wheel_omega_[3].Calculate(
-          target_motor_omega_[3],
-          motor_wheel_3_->GetOmega() / PARAM.reductionratio, dt_);
-
-      // 计算原始输出 (PID + 前馈力矩)
+      /*目标角速度*/
       for (int i = 0; i < 4; i++) {
-        output_[i] = target_motor_force_[i] * PARAM.wheel_radius+
-        target_motor_current_[i];
+        target_motor_current_[i] = pid_wheel_speed_[i].Calculate(
+            target_motor_omega_[i],
+            motor_feedback_[i].omega / PARAM.reduction_ratio, dt_);
+      }
+
+      /*计算输出*/
+      for (int i = 0; i < 4; i++) {
+        output_[i] = target_motor_force_[i] * PARAM.wheel_radius +
+                     target_motor_current_[i];
       }
     }
   }
@@ -428,33 +421,21 @@ class Omni {
    * @brief 功率控制更新
    */
   void PowerControlUpdate() {
-    /*扭矩电流转换为命令电流的比率*/
-    float ratio_3508 =
-        motor_wheel_0_->GetLSB() / motor_wheel_0_->GetCurrentMAX();
-
-    RMMotor *motor_wheels[4] = {motor_wheel_0_, motor_wheel_1_, motor_wheel_2_,
-                                motor_wheel_3_};
-
     for (int i = 0; i < 4; i++) {
-      motor_data_.rotorspeed_rpm_3508[i] = motor_wheels[i]->GetRPM();
+      motor_data_.rotorspeed_rpm_3508[i] = motor_feedback_[i].velocity;
       motor_data_.output_current_3508[i] =
-          motor_wheels[i]->GetCurrent() * ratio_3508;
+          motor_feedback_[i].torque * M3508_NM_TO_LSB_RATIO;
     }
 
-    /* 设置3508电机数据 */
     power_control_->SetMotorData3508(motor_data_.output_current_3508,
                                      motor_data_.rotorspeed_rpm_3508);
 
     power_control_->CalculatePowerControlParam();
 
-    /*将扭矩转换为电流的比率*/
-    float ratio_current =
-        (motor_wheel_0_->GetLSB() / PARAM.reductionratio /
-         motor_wheel_0_->KGetTorque() / motor_wheel_0_->GetCurrentMAX());
-
     for (int i = 0; i < 4; i++) {
       motor_data_.output_current_3508[i] =
-          std::clamp(output_[i] * ratio_current, -16384.0f, 16384.0f);
+          std::clamp(output_[i] * M3508_NM_TO_LSB_RATIO / PARAM.reduction_ratio,
+                     -16384.0f, 16384.0f);
     }
 
     power_control_->SetMotorData3508(motor_data_.output_current_3508,
@@ -493,33 +474,30 @@ class Omni {
       for (int i = 0; i < 4; i++) {
         output_[i] =
             std::clamp(power_control_data_.new_output_current_3508[i] /
-                           (motor_wheel_0_->GetLSB() / PARAM.reductionratio /
-                            motor_wheel_0_->KGetTorque() /
-                            motor_wheel_0_->GetCurrentMAX()),
+                           M3508_NM_TO_LSB_RATIO * PARAM.reduction_ratio,
                        -6.0f, 6.0f);
       }
     }
-    if(chassis_event_==static_cast<uint32_t>(Chassismode::RELAX)){
+    if (chassis_event_ == ChassisMode::RELAX) {
       LostCtrl();
       return;
+    } else {
+      for (int i = 0; i < 4; i++) {
+        motor_cmd_[i].torque = std::clamp(output_[i], -6.0f, 6.0f);
+      }
+      for (int i = 0; i < 4; i++) {
+        motor_wheel_[i]->Control(motor_cmd_[i]);
+      }
     }
-    else {
-    motor_wheel_0_->TorqueControl(output_[0], PARAM.reductionratio);
-    motor_wheel_1_->TorqueControl(output_[1], PARAM.reductionratio);
-    motor_wheel_2_->TorqueControl(output_[2], PARAM.reductionratio);
-    motor_wheel_3_->TorqueControl(output_[3], PARAM.reductionratio);
-    }
-
   }
-/**
- * @brief 失去控制时的处理
- *
- */
+  /**
+   * @brief 失去控制时的处理
+   *
+   */
   void LostCtrl() {
-    motor_wheel_0_->Relax();
-    motor_wheel_1_->Relax();
-    motor_wheel_2_->Relax();
-    motor_wheel_3_->Relax();
+    for (int i = 0; i < 4; i++) {
+      motor_wheel_[i]->Relax();
+    }
   }
 
   static int CommandFunc(Omni *self, int argc, char **argv) {
@@ -545,26 +523,30 @@ class Omni {
       LibXR::STDIO::Printf(
           "  Motor 0 - Angle: %.2f rad, RPM: %.0f, Current: %.2f A, Temp: %.0f "
           "C\r\n",
-          self->motor_wheel_0_->GetAngle(), self->motor_wheel_0_->GetRPM(),
-          self->motor_wheel_0_->GetCurrent(), self->motor_wheel_0_->GetTemp());
+          static_cast<float>(self->motor_feedback_[0].abs_angle),
+          self->motor_feedback_[0].velocity, self->motor_feedback_[0].torque,
+          self->motor_feedback_[0].temp);
       self->thread_.Sleep(1);
       LibXR::STDIO::Printf(
           "  Motor 1 - Angle: %.2f rad, RPM: %.0f, Current: %.2f A, Temp: %.0f "
           "C\r\n",
-          self->motor_wheel_1_->GetAngle(), self->motor_wheel_1_->GetRPM(),
-          self->motor_wheel_1_->GetCurrent(), self->motor_wheel_1_->GetTemp());
+          static_cast<float>(self->motor_feedback_[1].abs_angle),
+          self->motor_feedback_[1].velocity, self->motor_feedback_[1].torque,
+          self->motor_feedback_[1].temp);
       self->thread_.Sleep(1);
       LibXR::STDIO::Printf(
           "  Motor 2 - Angle: %.2f rad, RPM: %.0f, Current: %.2f A, Temp: %.0f "
           "C\r\n",
-          self->motor_wheel_2_->GetAngle(), self->motor_wheel_2_->GetRPM(),
-          self->motor_wheel_2_->GetCurrent(), self->motor_wheel_2_->GetTemp());
+          static_cast<float>(self->motor_feedback_[2].abs_angle),
+          self->motor_feedback_[2].velocity, self->motor_feedback_[2].torque,
+          self->motor_feedback_[2].temp);
       self->thread_.Sleep(1);
       LibXR::STDIO::Printf(
           "  Motor 3 - Angle: %.2f rad, RPM: %.0f, Current: %.2f A, Temp: %.0f "
           "C\r\n",
-          self->motor_wheel_3_->GetAngle(), self->motor_wheel_3_->GetRPM(),
-          self->motor_wheel_3_->GetCurrent(), self->motor_wheel_3_->GetTemp());
+          static_cast<float>(self->motor_feedback_[3].abs_angle),
+          self->motor_feedback_[3].velocity, self->motor_feedback_[3].torque,
+          self->motor_feedback_[3].temp);
       self->thread_.Sleep(1);
       LibXR::STDIO::Printf(
           "  Chassis Now State - VX: %.2f, VY: %.2f, Omega: %.2f\r\n",
@@ -611,8 +593,8 @@ class Omni {
   float target_omega_ = 0.0f;
 
   float current_yaw_ = 0.0f;
-  float current_roll_ = 0.0;
-  float current_pitch_ = 0.0;
+  float current_roll_ = 0.0f;
+  float current_pitch_ = 0.0f;
   float chassis_yaw_ = 0.0f;
   float torque_ff_[4]{0.0, 0.0, 0.0, 0.0};
   float baseff_[4]{0.0, 0.0, 0.0, 0.0};
@@ -622,17 +604,22 @@ class Omni {
   float dt_ = 0;
   LibXR::MicrosecondTimestamp last_online_time_ = 0;
 
-  RMMotor *motor_wheel_0_;
-  RMMotor *motor_wheel_1_;
-  RMMotor *motor_wheel_2_;
-  RMMotor *motor_wheel_3_;
+  Motor *motor_wheel_0_;
+  Motor *motor_wheel_1_;
+  Motor *motor_wheel_2_;
+  Motor *motor_wheel_3_;
+
+  Motor *motor_wheel_[4]{motor_wheel_0_, motor_wheel_1_, motor_wheel_2_,
+                         motor_wheel_3_};
+
+  Motor::Feedback motor_feedback_[4]{};
 
   LibXR::PID<float> pid_follow_;
   LibXR::PID<float> pid_velocity_x_;
   LibXR::PID<float> pid_velocity_y_;
   LibXR::PID<float> pid_omega_;
 
-  LibXR::PID<float> pid_wheel_omega_[4] = {
+  LibXR::PID<float> pid_wheel_speed_[4] = {
       LibXR::PID<float>(LibXR::PID<float>::Param()),
       LibXR::PID<float>(LibXR::PID<float>::Param()),
       LibXR::PID<float>(LibXR::PID<float>::Param()),
@@ -654,11 +641,13 @@ class Omni {
   CMD *cmd_;
   CMD::ChassisCMD cmd_data_;
 
-  MotorData motor_data_ = {};
+  Motor::MotorCmd motor_cmd_[4]{};
+
+  MotorData motor_data_{};
   PowerControl *power_control_;
   PowerControlData power_control_data_;
   LibXR::EulerAngle<float> euler_;
-  uint32_t chassis_event_ = 0;
+  ChassisMode chassis_event_ = ChassisMode::RELAX;
 
   LibXR::RamFS::File cmd_file_;
   char *cmd_name_;
