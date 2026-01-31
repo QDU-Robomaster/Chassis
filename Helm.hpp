@@ -24,6 +24,7 @@ depends: []
 #include "libxr_def.hpp"
 #include "libxr_time.hpp"
 #include "pid.hpp"
+#include "timebase.hpp"
 
 #define M3508_NM_TO_LSB_RATIO \
   52437.5f /* 3508转子扭矩转化为电机控制单位的比例 */
@@ -175,6 +176,7 @@ class Helm {
 
     helm->mutex_.Unlock();
     while (true) {
+      auto last_time = LibXR::Timebase::GetMilliseconds();
       if (cmd_suber.Available()) {
         helm->cmd_data_ = cmd_suber.GetData();
         cmd_suber.StartWaiting();
@@ -193,7 +195,7 @@ class Helm {
       helm->mutex_.Unlock();
       helm->Output();
 
-      helm->thread_.Sleep(2);
+      helm->thread_.SleepUntil(last_time,2);
     }
   }
   /**
