@@ -148,6 +148,7 @@ struct MotorData {
 #include "Mecanum.hpp"
 #include "Omni.hpp"
 #include "RMMotor.hpp"
+#include "Motor.hpp"
 #include "app_framework.hpp"
 #include "libxr_def.hpp"
 #include "pid.hpp"
