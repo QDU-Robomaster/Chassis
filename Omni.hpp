@@ -28,6 +28,10 @@ depends: []
 #include "pid.hpp"
 #include "timebase.hpp"
 
+#ifdef DEBUG
+#include "DebugCore.hpp"
+#endif
+
 #define M3508_NM_TO_LSB_RATIO \
   52437.5f /* 3508转子扭矩转化为电机控制单位的比例 */
 
@@ -87,11 +91,11 @@ class Omni {
    * @param pid_steer_angle_2 舵机2角度PID参数（本底盘未使用）
    * @param pid_steer_angle_3 舵机3角度PID参数（本底盘未使用）
    */
-  Omni(LibXR::HardwareContainer &hw, LibXR::ApplicationManager &app,
-       Motor *motor_wheel_0, Motor *motor_wheel_1, Motor *motor_wheel_2,
-       Motor *motor_wheel_3, Motor *motor_steer_0, Motor *motor_steer_1,
-       Motor *motor_steer_2, Motor *motor_steer_3, CMD *cmd,
-       PowerControl *power_control, uint32_t task_stack_depth,
+  Omni(LibXR::HardwareContainer& hw, LibXR::ApplicationManager& app,
+       Motor* motor_wheel_0, Motor* motor_wheel_1, Motor* motor_wheel_2,
+       Motor* motor_wheel_3, Motor* motor_steer_0, Motor* motor_steer_1,
+       Motor* motor_steer_2, Motor* motor_steer_3, CMD* cmd,
+       PowerControl* power_control, uint32_t task_stack_depth,
        ChassisParam chassis_param, LibXR::PID<float>::Param pid_follow,
        LibXR::PID<float>::Param pid_velocity_x,
        LibXR::PID<float>::Param pid_velocity_y,
@@ -124,8 +128,14 @@ class Omni {
         pid_steer_speed_{pid_steer_speed_0, pid_steer_speed_1,
                          pid_steer_speed_2, pid_steer_speed_3},
         cmd_(cmd),
-        power_control_(power_control),
-        cmd_file_(InitCmdFile()) {
+        power_control_(power_control)
+#ifdef DEBUG
+        ,
+        cmd_file_(LibXR::RamFS::CreateFile(
+            "omni_chassis",
+            debug_core::command_thunk<Omni, &Omni::DebugCommand>, this))
+#endif
+  {
     UNUSED(hw);
     UNUSED(app);
     UNUSED(motor_steer_0);
@@ -153,10 +163,12 @@ class Omni {
 
     thread_.Create(this, ThreadFunction, "OmniChassisThread", task_stack_depth,
                    LibXR::Thread::Priority::HIGH);
+#ifdef DEBUG
     hw.template FindOrExit<LibXR::RamFS>({"ramfs"})->Add(cmd_file_);
+#endif
 
     auto lost_ctrl_callback = LibXR::Callback<uint32_t>::Create(
-        [](bool in_isr, Omni *omni, uint32_t event_id) {
+        [](bool in_isr, Omni* omni, uint32_t event_id) {
           UNUSED(in_isr);
           UNUSED(event_id);
           omni->LostCtrl();
@@ -170,7 +182,7 @@ class Omni {
    * @param omni Omni对象指针
    * @details 控制线程主循环，负责接收控制指令、执行运动学解算和动力学控制输出
    */
-  static void ThreadFunction(Omni *omni) {
+  static void ThreadFunction(Omni* omni) {
     omni->mutex_.Lock();
 
     LibXR::Topic::ASyncSubscriber<CMD::ChassisCMD> cmd_suber("chassis_cmd");
@@ -181,10 +193,11 @@ class Omni {
     cmd_suber.StartWaiting();
     euler_suber.StartWaiting();
     yawmotor_angle_suber.StartWaiting();
+    omni->last_online_time_ = LibXR::Timebase::GetMicroseconds();
+    auto last_time = LibXR::Timebase::GetMilliseconds();
     omni->mutex_.Unlock();
 
     while (true) {
-      auto last_time = LibXR::Timebase::GetMilliseconds();
       if (cmd_suber.Available()) {
         omni->cmd_data_ = cmd_suber.GetData();
         cmd_suber.StartWaiting();
@@ -199,7 +212,7 @@ class Omni {
       }
 
       if (yawmotor_angle_suber.Available()) {
-        omni->chassis_yaw_ = LibXR::CycleValue<float>(yawmotor_angle_suber.GetData()-omni->yawmotor_zero_);
+        omni->chassis_yaw_ = yawmotor_angle_suber.GetData();
         yawmotor_angle_suber.StartWaiting();
       }
 
@@ -214,7 +227,7 @@ class Omni {
       omni->mutex_.Unlock();
       omni->OutputToDynamics();
 
-      omni->thread_.SleepUntil(last_time,2);
+      omni->thread_.SleepUntil(last_time, 2);
     }
   }
 
@@ -501,81 +514,9 @@ class Omni {
       motor_wheel_[i]->Relax();
     }
   }
-
-  static int CommandFunc(Omni *self, int argc, char **argv) {
-    if (argc == 1) {
-      LibXR::STDIO::Printf("Usage:\r\n");
-      LibXR::STDIO::Printf(
-          "  monitor                          - Print chassis motor feedback "
-          "once\r\n");
-      LibXR::STDIO::Printf(
-          "  monitor <time_ms> [interval_ms]  - Monitor chassis motor "
-          "feedback\r\n");
-      return 0;
-    }
-
-    if (strcmp(argv[1], "monitor") != 0) {
-      LibXR::STDIO::Printf("Error: Unknown command '%s'.\r\n", argv[1]);
-      return -1;
-    }
-
-    auto print_feedback = [self]() {
-      LibXR::STDIO::Printf("[%lu ms] Chassis Motors Feedback:\r\n",
-                           LibXR::Thread::GetTime());
-      LibXR::STDIO::Printf(
-          "  Motor 0 - Angle: %.2f rad, RPM: %.0f, Current: %.2f A, Temp: %.0f "
-          "C\r\n",
-          static_cast<float>(self->motor_feedback_[0].abs_angle),
-          self->motor_feedback_[0].velocity, self->motor_feedback_[0].torque,
-          self->motor_feedback_[0].temp);
-      self->thread_.Sleep(1);
-      LibXR::STDIO::Printf(
-          "  Motor 1 - Angle: %.2f rad, RPM: %.0f, Current: %.2f A, Temp: %.0f "
-          "C\r\n",
-          static_cast<float>(self->motor_feedback_[1].abs_angle),
-          self->motor_feedback_[1].velocity, self->motor_feedback_[1].torque,
-          self->motor_feedback_[1].temp);
-      self->thread_.Sleep(1);
-      LibXR::STDIO::Printf(
-          "  Motor 2 - Angle: %.2f rad, RPM: %.0f, Current: %.2f A, Temp: %.0f "
-          "C\r\n",
-          static_cast<float>(self->motor_feedback_[2].abs_angle),
-          self->motor_feedback_[2].velocity, self->motor_feedback_[2].torque,
-          self->motor_feedback_[2].temp);
-      self->thread_.Sleep(1);
-      LibXR::STDIO::Printf(
-          "  Motor 3 - Angle: %.2f rad, RPM: %.0f, Current: %.2f A, Temp: %.0f "
-          "C\r\n",
-          static_cast<float>(self->motor_feedback_[3].abs_angle),
-          self->motor_feedback_[3].velocity, self->motor_feedback_[3].torque,
-          self->motor_feedback_[3].temp);
-      self->thread_.Sleep(1);
-      LibXR::STDIO::Printf(
-          "  Chassis Now State - VX: %.2f, VY: %.2f, Omega: %.2f\r\n",
-          self->now_vx_, self->now_vy_, self->now_omega_);
-      LibXR::STDIO::Printf(
-          "  Chassis Target State - VX: %.2f, VY: %.2f, Omega: %.2f\r\n",
-          self->target_vx_, self->target_vy_, self->target_omega_);
-      self->thread_.Sleep(1);
-    };
-
-    if (argc == 2) {
-      print_feedback();
-    } else if (argc >= 3) {
-      int time = atoi(argv[2]);
-      int delay = (argc == 4) ? atoi(argv[3]) : 1000;
-      while (time > 0) {
-        print_feedback();
-        LibXR::Thread::Sleep(delay);
-        time -= delay;
-      }
-    } else {
-      LibXR::STDIO::Printf("Error: Invalid arguments.\r\n");
-      return -1;
-    }
-
-    return 0;
-  }
+#ifdef DEBUG
+  int DebugCommand(int argc, char** argv);
+#endif
 
  private:
   const ChassisParam PARAM;
@@ -600,18 +541,17 @@ class Omni {
   float chassis_yaw_ = 0.0f;
   float torque_ff_[4]{0.0, 0.0, 0.0, 0.0};
   float baseff_[4]{0.0, 0.0, 0.0, 0.0};
-  float yawmotor_zero_ = 5.66203833f;
   float gx_ff_;
   float gy_ff_;
   float dt_ = 0;
   LibXR::MicrosecondTimestamp last_online_time_ = 0;
 
-  Motor *motor_wheel_0_;
-  Motor *motor_wheel_1_;
-  Motor *motor_wheel_2_;
-  Motor *motor_wheel_3_;
+  Motor* motor_wheel_0_;
+  Motor* motor_wheel_1_;
+  Motor* motor_wheel_2_;
+  Motor* motor_wheel_3_;
 
-  Motor *motor_wheel_[4]{motor_wheel_0_, motor_wheel_1_, motor_wheel_2_,
+  Motor* motor_wheel_[4]{motor_wheel_0_, motor_wheel_1_, motor_wheel_2_,
                          motor_wheel_3_};
 
   Motor::Feedback motor_feedback_[4]{};
@@ -640,28 +580,24 @@ class Omni {
   LibXR::Thread thread_;
   LibXR::Mutex mutex_;
 
-  CMD *cmd_;
+  CMD* cmd_;
   CMD::ChassisCMD cmd_data_;
 
   Motor::MotorCmd motor_cmd_[4]{};
 
   MotorData motor_data_{};
-  PowerControl *power_control_;
+  PowerControl* power_control_;
   PowerControlData power_control_data_;
   LibXR::EulerAngle<float> euler_;
   ChassisMode chassis_event_ = ChassisMode::RELAX;
 
+#ifdef DEBUG
   LibXR::RamFS::File cmd_file_;
-  char *cmd_name_;
-
-  LibXR::RamFS::File InitCmdFile() {
-    const char *prefix = "omni_chassis";
-    size_t prefix_len = strlen(prefix);
-
-    cmd_name_ = new char[prefix_len + 1];
-    memcpy(cmd_name_, prefix, prefix_len);
-    cmd_name_[prefix_len] = '\0';
-
-    return LibXR::RamFS::CreateFile(cmd_name_, CommandFunc, this);
-  }
+#endif
 };
+
+#ifdef DEBUG
+#define OMNI_CHASSIS_DEBUG_IMPL
+#include "OmniDebug.inl"
+#undef OMNI_CHASSIS_DEBUG_IMPL
+#endif

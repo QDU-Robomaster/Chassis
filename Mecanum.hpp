@@ -10,6 +10,8 @@ depends: []
 === END MANIFEST === */
 // clang-format on
 #include <cstdint>
+#include <cstdlib>
+#include <cstring>
 
 #include "CMD.hpp"
 #include "Chassis.hpp"
@@ -18,10 +20,15 @@ depends: []
 #include "app_framework.hpp"
 #include "event.hpp"
 #include "libxr_def.hpp"
+#include "libxr_rw.hpp"
 #include "libxr_time.hpp"
 #include "pid.hpp"
 #include "thread.hpp"
 #include "timebase.hpp"
+
+#ifdef DEBUG
+#include "DebugCore.hpp"
+#endif
 
 #define M3508_NM_TO_LSB_RATIO \
   52437.5f /* 3508转子扭矩转化为电机控制单位的比例 */
@@ -78,11 +85,11 @@ class Mecanum {
    * @param pid_steer_angle_2 舵机2角度PID参数（本底盘未使用）
    * @param pid_steer_angle_3 舵机3角度PID参数（本底盘未使用）
    */
-  Mecanum(LibXR::HardwareContainer &hw, LibXR::ApplicationManager &app,
-          Motor *motor_wheel_0, Motor *motor_wheel_1, Motor *motor_wheel_2,
-          Motor *motor_wheel_3, Motor *motor_steer_0, Motor *motor_steer_1,
-          Motor *motor_steer_2, Motor *motor_steer_3, CMD *cmd,
-          PowerControl *power_control, uint32_t task_stack_depth,
+  Mecanum(LibXR::HardwareContainer& hw, LibXR::ApplicationManager& app,
+          Motor* motor_wheel_0, Motor* motor_wheel_1, Motor* motor_wheel_2,
+          Motor* motor_wheel_3, Motor* motor_steer_0, Motor* motor_steer_1,
+          Motor* motor_steer_2, Motor* motor_steer_3, CMD* cmd,
+          PowerControl* power_control, uint32_t task_stack_depth,
           ChassisParam chassis_param, LibXR::PID<float>::Param pid_follow,
           LibXR::PID<float>::Param pid_velocity_x,
           LibXR::PID<float>::Param pid_velocity_y,
@@ -115,8 +122,14 @@ class Mecanum {
         pid_steer_speed_{pid_steer_speed_0, pid_steer_speed_1,
                          pid_steer_speed_2, pid_steer_speed_3},
         cmd_(cmd),
-        power_control_(power_control) {
-    UNUSED(hw);
+        power_control_(power_control)
+#ifdef DEBUG
+        ,
+        cmd_file_(LibXR::RamFS::CreateFile(
+            "mecanum_chassis",
+            debug_core::command_thunk<Mecanum, &Mecanum::DebugCommand>, this))
+#endif
+  {
     UNUSED(app);
     UNUSED(motor_steer_0);
     UNUSED(motor_steer_1);
@@ -143,8 +156,11 @@ class Mecanum {
 
     thread_.Create(this, ThreadFunction, "MecanumChassisThread",
                    task_stack_depth, LibXR::Thread::Priority::HIGH);
+#ifdef DEBUG
+    hw.template FindOrExit<LibXR::RamFS>({"ramfs"})->Add(cmd_file_);
+#endif
     auto lost_ctrl_callback = LibXR::Callback<uint32_t>::Create(
-        [](bool in_isr, Mecanum *mecanum, uint32_t event_id) {
+        [](bool in_isr, Mecanum* mecanum, uint32_t event_id) {
           UNUSED(in_isr);
           UNUSED(event_id);
           mecanum->LostCtrl();
@@ -158,7 +174,7 @@ class Mecanum {
    * @param mecanum Mecanum对象指针
    * @details 控制线程主循环，负责接收控制指令、执行运动学解算和动力学控制输出
    */
-  static void ThreadFunction(Mecanum *mecanum) {
+  static void ThreadFunction(Mecanum* mecanum) {
     mecanum->mutex_.Lock();
 
     LibXR::Topic::ASyncSubscriber<CMD::ChassisCMD> cmd_suber("chassis_cmd");
@@ -167,16 +183,19 @@ class Mecanum {
     cmd_suber.StartWaiting();
     yawmotor_angle_suber.StartWaiting();
 
+    mecanum->last_online_time_ = LibXR::Timebase::GetMicroseconds();
+    auto last_time = LibXR::Timebase::GetMilliseconds();
+
     mecanum->mutex_.Unlock();
 
     while (true) {
-      auto last_time = LibXR::Timebase::GetMilliseconds();
       if (cmd_suber.Available()) {
         mecanum->cmd_data_ = cmd_suber.GetData();
         cmd_suber.StartWaiting();
       }
       if (yawmotor_angle_suber.Available()) {
-        mecanum->current_yaw_ = LibXR::CycleValue<float>(yawmotor_angle_suber.GetData()-mecanum->yawmotor_zero_);
+        mecanum->current_yaw_ = LibXR::CycleValue<float>(
+            yawmotor_angle_suber.GetData() - mecanum->yawmotor_zero_);
         yawmotor_angle_suber.StartWaiting();
       }
 
@@ -191,7 +210,7 @@ class Mecanum {
       mecanum->mutex_.Unlock();
       mecanum->OutputToDynamics();
 
-      mecanum->thread_.SleepUntil(last_time,2);
+      mecanum->thread_.SleepUntil(last_time, 2);
     }
   }
 
@@ -421,6 +440,9 @@ class Mecanum {
       motor_wheel_[i]->Relax();
     }
   }
+#ifdef DEBUG
+  int DebugCommand(int argc, char** argv);
+#endif
 
  private:
   const ChassisParam PARAM;
@@ -444,12 +466,12 @@ class Mecanum {
   float dt_ = 0;
   LibXR::MicrosecondTimestamp last_online_time_ = 0;
 
-  Motor *motor_wheel_0_;
-  Motor *motor_wheel_1_;
-  Motor *motor_wheel_2_;
-  Motor *motor_wheel_3_;
+  Motor* motor_wheel_0_;
+  Motor* motor_wheel_1_;
+  Motor* motor_wheel_2_;
+  Motor* motor_wheel_3_;
 
-  Motor *motor_wheel_[4]{motor_wheel_0_, motor_wheel_1_, motor_wheel_2_,
+  Motor* motor_wheel_[4]{motor_wheel_0_, motor_wheel_1_, motor_wheel_2_,
                          motor_wheel_3_};
 
   Motor::Feedback motor_feedback_[4]{};
@@ -476,17 +498,27 @@ class Mecanum {
       LibXR::PID<float>(LibXR::PID<float>::Param()),
       LibXR::PID<float>(LibXR::PID<float>::Param())};
 
-  CMD *cmd_;
+  CMD* cmd_;
   CMD::ChassisCMD cmd_data_;
 
   Motor::MotorCmd motor_cmd_[4]{};
 
   MotorData motor_data_{};
-  PowerControl *power_control_;
+  PowerControl* power_control_;
   PowerControlData power_control_data_;
 
   LibXR::Thread thread_;
   LibXR::Mutex mutex_;
 
   ChassisMode chassis_event_ = ChassisMode::RELAX;
+
+#ifdef DEBUG
+  LibXR::RamFS::File cmd_file_;
+#endif
 };
+
+#ifdef DEBUG
+#define MECANUM_CHASSIS_DEBUG_IMPL
+#include "MecanumDebug.inl"
+#undef MECANUM_CHASSIS_DEBUG_IMPL
+#endif
