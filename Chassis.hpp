@@ -146,9 +146,9 @@ struct MotorData {
 #include "CMD.hpp"
 #include "Helm.hpp"
 #include "Mecanum.hpp"
+#include "Motor.hpp"
 #include "Omni.hpp"
 #include "RMMotor.hpp"
-#include "Motor.hpp"
 #include "app_framework.hpp"
 #include "libxr_def.hpp"
 #include "pid.hpp"
@@ -167,11 +167,11 @@ class Chassis : public LibXR::Application {
     float gravity = 0.0f;
   };
 
-  Chassis(LibXR::HardwareContainer &hw, LibXR::ApplicationManager &app,
-          Motor *motor_wheel_0, Motor *motor_wheel_1, Motor *motor_wheel_2,
-          Motor *motor_wheel_3, Motor *motor_steer_0, Motor *motor_steer_1,
-          Motor *motor_steer_2, Motor *motor_steer_3, CMD *cmd,
-          PowerControl *power_control, uint32_t task_stack_depth,
+  Chassis(LibXR::HardwareContainer& hw, LibXR::ApplicationManager& app,
+          Motor* motor_wheel_0, Motor* motor_wheel_1, Motor* motor_wheel_2,
+          Motor* motor_wheel_3, Motor* motor_steer_0, Motor* motor_steer_1,
+          Motor* motor_steer_2, Motor* motor_steer_3, CMD* cmd,
+          PowerControl* power_control, uint32_t task_stack_depth,
           ChassisParam chassis_param = {},
           LibXR::PID<float>::Param pid_follow_ = {},
           LibXR::PID<float>::Param pid_velocity_x_ = {},
@@ -204,7 +204,7 @@ class Chassis : public LibXR::Application {
             pid_steer_angle_2_, pid_steer_angle_3_, pid_steer_speed_0_,
             pid_steer_speed_1_, pid_steer_speed_2_, pid_steer_speed_3_) {
     auto callback = LibXR::Callback<uint32_t>::Create(
-        [](bool in_isr, Chassis *chassis, uint32_t event_id) {
+        [](bool in_isr, Chassis* chassis, uint32_t event_id) {
           UNUSED(in_isr);
           chassis->EventHandler(event_id);
         },
@@ -227,7 +227,7 @@ class Chassis : public LibXR::Application {
    * @details 通过此事件处理器可以向底盘发送事件消息，控制底盘的行为模式
    * @return LibXR::Event& 事件处理器的引用
    */
-  LibXR::Event &GetEvent() { return chassis_event_; }
+  LibXR::Event& GetEvent() { return chassis_event_; }
 
   /**
    * @brief 事件处理器，根据传入的事件ID执行相应操作

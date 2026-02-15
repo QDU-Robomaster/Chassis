@@ -71,6 +71,12 @@ jobs:
           repository: QDU-Robomaster/Matrix
           path: bsp-dev-c/Modules/Matrix
 
+      - name: Checkout DebugCore module
+        uses: actions/checkout@v4
+        with:
+          repository: QDU-Robomaster/DebugCore
+          path: bsp-dev-c/Modules/DebugCore
+
       - name: Add modules
         run: |
           cd bsp-dev-c
