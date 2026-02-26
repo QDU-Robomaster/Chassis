@@ -370,16 +370,16 @@ class Omni {
   void SelfResolution() {
     const float SQRT2 = 1.41421356237f;
 
-    now_vx_ = (motor_feedback_[0].omega / PARAM.reduction_ratio -
-               motor_feedback_[1].omega / PARAM.reduction_ratio -
-               motor_feedback_[2].omega / PARAM.reduction_ratio +
-               motor_feedback_[3].omega / PARAM.reduction_ratio) *
+    now_vx_ = -(motor_feedback_[0].omega / PARAM.reduction_ratio -
+                motor_feedback_[1].omega / PARAM.reduction_ratio -
+                motor_feedback_[2].omega / PARAM.reduction_ratio +
+                motor_feedback_[3].omega / PARAM.reduction_ratio) *
               SQRT2 * PARAM.wheel_radius / 4.0f;
 
-    now_vy_ = (motor_feedback_[0].omega / PARAM.reduction_ratio +
-               motor_feedback_[1].omega / PARAM.reduction_ratio -
-               motor_feedback_[2].omega / PARAM.reduction_ratio -
-               motor_feedback_[3].omega / PARAM.reduction_ratio) *
+    now_vy_ = -(motor_feedback_[0].omega / PARAM.reduction_ratio +
+                motor_feedback_[1].omega / PARAM.reduction_ratio -
+                motor_feedback_[2].omega / PARAM.reduction_ratio -
+                motor_feedback_[3].omega / PARAM.reduction_ratio) *
               SQRT2 * PARAM.wheel_radius / 4.0f;
 
     now_omega_ = (motor_feedback_[0].omega / PARAM.reduction_ratio +
