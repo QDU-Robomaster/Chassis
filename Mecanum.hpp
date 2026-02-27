@@ -33,8 +33,9 @@ depends: []
 #define M3508_NM_TO_LSB_RATIO \
   52437.5f /* 3508转子扭矩转化为电机控制单位的比例 */
 
-#define MECANUM_MOTOR_MAX_OMEGA 52      /* 电机输出轴最大角速度 */
-#define MECANUM_CHASSIS_MAX_POWER 60.0f /* 底盘最大功率 */
+#define MECANUM_MOTOR_MAX_OMEGA 52       /* 电机输出轴最大角速度 */
+#define MECANUM_CHASSIS_MAX_POWER 60.0f  /* 底盘最大功率 */
+#define MECANUM_CHASSIS_BOOST_POWER 120.0f  /* 底盘加速模式功率(Shift) */
 
 template <typename ChassisType>
 class Chassis;
@@ -384,7 +385,10 @@ class Mecanum {
     power_control_->SetMotorData3508(motor_data_.output_current_3508,
                                      motor_data_.rotorspeed_rpm_3508);
 
-    power_control_->OutputLimit(MECANUM_CHASSIS_MAX_POWER);
+    /* 根据 boost 状态选择功率限制 */
+    float max_power =
+        cmd_data_.boost ? MECANUM_CHASSIS_BOOST_POWER : MECANUM_CHASSIS_MAX_POWER;
+    power_control_->OutputLimit(max_power);
     power_control_data_ = power_control_->GetPowerControlData();
   }
 
