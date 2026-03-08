@@ -36,9 +36,9 @@ depends: []
 #define M3508_NM_TO_LSB_RATIO \
   52437.5f /* 3508转子扭矩转化为电机控制单位的比例 */
 #define GM6020_NM_TO_LSB_RATIO \
-  7370.0f                             /* 6020转子扭矩转化为电机控制单位的比例 */
-#define HELM_CHASSIS_MAX_POWER 60.0f   /* 底盘最大功率 */
-#define HELM_CHASSIS_BOOST_POWER 120.0f  /* 底盘加速模式功率(Shift) */
+  7370.0f                            /* 6020转子扭矩转化为电机控制单位的比例 */
+#define HELM_CHASSIS_MAX_POWER 60.0f /* 底盘最大功率 */
+#define HELM_CHASSIS_BOOST_POWER 120.0f /* 底盘加速模式功率(Shift) */
 
 template <typename ChassisType>
 class Chassis;
