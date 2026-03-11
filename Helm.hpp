@@ -108,7 +108,8 @@ class Helm {
        LibXR::PID<float>::Param pid_steer_speed_0,
        LibXR::PID<float>::Param pid_steer_speed_1,
        LibXR::PID<float>::Param pid_steer_speed_2,
-       LibXR::PID<float>::Param pid_steer_speed_3)
+       LibXR::PID<float>::Param pid_steer_speed_3,
+       LibXR::Thread::Priority thread_priority = LibXR::Thread::Priority::HIGH)
       : PARAM(chassis_param),
         motor_wheel_0_(motor_wheel_0),
         motor_wheel_1_(motor_wheel_1),
@@ -163,7 +164,7 @@ class Helm {
     }
 
     thread_.Create(this, ThreadFunction, "HelmChassisThread", task_stack_depth,
-                   LibXR::Thread::Priority::HIGH);
+                   thread_priority);
 #ifdef DEBUG
     hw.template FindOrExit<LibXR::RamFS>({"ramfs"})->Add(cmd_file_);
 #endif
