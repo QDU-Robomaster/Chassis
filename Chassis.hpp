@@ -119,6 +119,39 @@ constructor_args:
       i_limit: 0.0
       out_limit: 0.0
       cycle: false
+  - pid_steer_speed_0_:
+      k: 1.0
+      p: 0.0
+      i: 0.0
+      d: 0.0
+      i_limit: 0.0
+      out_limit: 0.0
+      cycle: false
+  - pid_steer_speed_1_:
+      k: 1.0
+      p: 0.0
+      i: 0.0
+      d: 0.0
+      i_limit: 0.0
+      out_limit: 0.0
+      cycle: false
+  - pid_steer_speed_2_:
+      k: 1.0
+      p: 0.0
+      i: 0.0
+      d: 0.0
+      i_limit: 0.0
+      out_limit: 0.0
+      cycle: false
+  - pid_steer_speed_3_:
+      k: 1.0
+      p: 0.0
+      i: 0.0
+      d: 0.0
+      i_limit: 0.0
+      out_limit: 0.0
+      cycle: false
+  - thread_priority: LibXR::Thread::Priority::HIGH
 template_args:
   - ChassisType: Omni
 required_hardware:
@@ -167,28 +200,30 @@ class Chassis : public LibXR::Application {
     float gravity = 0.0f;
   };
 
-  Chassis(LibXR::HardwareContainer& hw, LibXR::ApplicationManager& app,
-          Motor* motor_wheel_0, Motor* motor_wheel_1, Motor* motor_wheel_2,
-          Motor* motor_wheel_3, Motor* motor_steer_0, Motor* motor_steer_1,
-          Motor* motor_steer_2, Motor* motor_steer_3, CMD* cmd,
-          PowerControl* power_control, uint32_t task_stack_depth,
-          ChassisParam chassis_param = {},
-          LibXR::PID<float>::Param pid_follow_ = {},
-          LibXR::PID<float>::Param pid_velocity_x_ = {},
-          LibXR::PID<float>::Param pid_velocity_y_ = {},
-          LibXR::PID<float>::Param pid_omega_ = {},
-          LibXR::PID<float>::Param pid_wheel_speed_0_ = {},
-          LibXR::PID<float>::Param pid_wheel_speed_1_ = {},
-          LibXR::PID<float>::Param pid_wheel_speed_2_ = {},
-          LibXR::PID<float>::Param pid_wheel_speed_3_ = {},
-          LibXR::PID<float>::Param pid_steer_angle_0_ = {},
-          LibXR::PID<float>::Param pid_steer_angle_1_ = {},
-          LibXR::PID<float>::Param pid_steer_angle_2_ = {},
-          LibXR::PID<float>::Param pid_steer_angle_3_ = {},
-          LibXR::PID<float>::Param pid_steer_speed_0_ = {},
-          LibXR::PID<float>::Param pid_steer_speed_1_ = {},
-          LibXR::PID<float>::Param pid_steer_speed_2_ = {},
-          LibXR::PID<float>::Param pid_steer_speed_3_ = {})
+  Chassis(
+      LibXR::HardwareContainer& hw, LibXR::ApplicationManager& app,
+      Motor* motor_wheel_0, Motor* motor_wheel_1, Motor* motor_wheel_2,
+      Motor* motor_wheel_3, Motor* motor_steer_0, Motor* motor_steer_1,
+      Motor* motor_steer_2, Motor* motor_steer_3, CMD* cmd,
+      PowerControl* power_control, uint32_t task_stack_depth,
+      ChassisParam chassis_param = {},
+      LibXR::PID<float>::Param pid_follow_ = {},
+      LibXR::PID<float>::Param pid_velocity_x_ = {},
+      LibXR::PID<float>::Param pid_velocity_y_ = {},
+      LibXR::PID<float>::Param pid_omega_ = {},
+      LibXR::PID<float>::Param pid_wheel_speed_0_ = {},
+      LibXR::PID<float>::Param pid_wheel_speed_1_ = {},
+      LibXR::PID<float>::Param pid_wheel_speed_2_ = {},
+      LibXR::PID<float>::Param pid_wheel_speed_3_ = {},
+      LibXR::PID<float>::Param pid_steer_angle_0_ = {},
+      LibXR::PID<float>::Param pid_steer_angle_1_ = {},
+      LibXR::PID<float>::Param pid_steer_angle_2_ = {},
+      LibXR::PID<float>::Param pid_steer_angle_3_ = {},
+      LibXR::PID<float>::Param pid_steer_speed_0_ = {},
+      LibXR::PID<float>::Param pid_steer_speed_1_ = {},
+      LibXR::PID<float>::Param pid_steer_speed_2_ = {},
+      LibXR::PID<float>::Param pid_steer_speed_3_ = {},
+      LibXR::Thread::Priority thread_priority = LibXR::Thread::Priority::HIGH)
       : chassis_(
             hw, app, motor_wheel_0, motor_wheel_1, motor_wheel_2, motor_wheel_3,
             motor_steer_0, motor_steer_1, motor_steer_2, motor_steer_3, cmd,
@@ -202,7 +237,8 @@ class Chassis : public LibXR::Application {
             pid_wheel_speed_0_, pid_wheel_speed_1_, pid_wheel_speed_2_,
             pid_wheel_speed_3_, pid_steer_angle_0_, pid_steer_angle_1_,
             pid_steer_angle_2_, pid_steer_angle_3_, pid_steer_speed_0_,
-            pid_steer_speed_1_, pid_steer_speed_2_, pid_steer_speed_3_) {
+            pid_steer_speed_1_, pid_steer_speed_2_, pid_steer_speed_3_,
+            thread_priority) {
     auto callback = LibXR::Callback<uint32_t>::Create(
         [](bool in_isr, Chassis* chassis, uint32_t event_id) {
           UNUSED(in_isr);

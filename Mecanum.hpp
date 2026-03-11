@@ -86,27 +86,29 @@ class Mecanum {
    * @param pid_steer_angle_2 舵机2角度PID参数（本底盘未使用）
    * @param pid_steer_angle_3 舵机3角度PID参数（本底盘未使用）
    */
-  Mecanum(LibXR::HardwareContainer& hw, LibXR::ApplicationManager& app,
-          Motor* motor_wheel_0, Motor* motor_wheel_1, Motor* motor_wheel_2,
-          Motor* motor_wheel_3, Motor* motor_steer_0, Motor* motor_steer_1,
-          Motor* motor_steer_2, Motor* motor_steer_3, CMD* cmd,
-          PowerControl* power_control, uint32_t task_stack_depth,
-          ChassisParam chassis_param, LibXR::PID<float>::Param pid_follow,
-          LibXR::PID<float>::Param pid_velocity_x,
-          LibXR::PID<float>::Param pid_velocity_y,
-          LibXR::PID<float>::Param pid_omega,
-          LibXR::PID<float>::Param pid_wheel_speed_0,
-          LibXR::PID<float>::Param pid_wheel_speed_1,
-          LibXR::PID<float>::Param pid_wheel_speed_2,
-          LibXR::PID<float>::Param pid_wheel_speed_3,
-          LibXR::PID<float>::Param pid_steer_angle_0,
-          LibXR::PID<float>::Param pid_steer_angle_1,
-          LibXR::PID<float>::Param pid_steer_angle_2,
-          LibXR::PID<float>::Param pid_steer_angle_3,
-          LibXR::PID<float>::Param pid_steer_speed_0,
-          LibXR::PID<float>::Param pid_steer_speed_1,
-          LibXR::PID<float>::Param pid_steer_speed_2,
-          LibXR::PID<float>::Param pid_steer_speed_3)
+  Mecanum(
+      LibXR::HardwareContainer& hw, LibXR::ApplicationManager& app,
+      Motor* motor_wheel_0, Motor* motor_wheel_1, Motor* motor_wheel_2,
+      Motor* motor_wheel_3, Motor* motor_steer_0, Motor* motor_steer_1,
+      Motor* motor_steer_2, Motor* motor_steer_3, CMD* cmd,
+      PowerControl* power_control, uint32_t task_stack_depth,
+      ChassisParam chassis_param, LibXR::PID<float>::Param pid_follow,
+      LibXR::PID<float>::Param pid_velocity_x,
+      LibXR::PID<float>::Param pid_velocity_y,
+      LibXR::PID<float>::Param pid_omega,
+      LibXR::PID<float>::Param pid_wheel_speed_0,
+      LibXR::PID<float>::Param pid_wheel_speed_1,
+      LibXR::PID<float>::Param pid_wheel_speed_2,
+      LibXR::PID<float>::Param pid_wheel_speed_3,
+      LibXR::PID<float>::Param pid_steer_angle_0,
+      LibXR::PID<float>::Param pid_steer_angle_1,
+      LibXR::PID<float>::Param pid_steer_angle_2,
+      LibXR::PID<float>::Param pid_steer_angle_3,
+      LibXR::PID<float>::Param pid_steer_speed_0,
+      LibXR::PID<float>::Param pid_steer_speed_1,
+      LibXR::PID<float>::Param pid_steer_speed_2,
+      LibXR::PID<float>::Param pid_steer_speed_3,
+      LibXR::Thread::Priority thread_priority = LibXR::Thread::Priority::HIGH)
       : PARAM(chassis_param),
         motor_wheel_0_(motor_wheel_0),   /*wheel0   ▲ y  wheel3*/
         motor_wheel_1_(motor_wheel_1),   /*    ↑    │     ↓    */
@@ -156,7 +158,7 @@ class Mecanum {
     }
 
     thread_.Create(this, ThreadFunction, "MecanumChassisThread",
-                   task_stack_depth, LibXR::Thread::Priority::HIGH);
+                   task_stack_depth, thread_priority);
 #ifdef DEBUG
     hw.template FindOrExit<LibXR::RamFS>({"ramfs"})->Add(cmd_file_);
 #endif
