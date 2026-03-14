@@ -1,4 +1,4 @@
-#pragma once
+﻿#pragma once
 
 // clang-format off
 /* === MODULE MANIFEST V2 ===
@@ -35,9 +35,8 @@ depends: []
 #define M3508_NM_TO_LSB_RATIO \
   52437.5f /* 3508转子扭矩转化为电机控制单位的比例 */
 
-#define OMNI_MOTOR_MAX_OMEGA 52         /* 电机输出轴最大角速度 */
-#define OMNI_CHASSIS_MAX_POWER 60.0f    /* 底盘最大功率 */
-#define OMNI_CHASSIS_BOOST_POWER 120.0f /* 底盘加速模式功率(Shift) */
+#define OMNI_MOTOR_MAX_OMEGA 52          /* 电机输出轴最大角速度 */
+
 
 template <typename ChassisType>
 class Chassis;
@@ -444,19 +443,26 @@ class Omni {
           motor_feedback_[i].torque * M3508_NM_TO_LSB_RATIO;
     }
 
+    /* 第一次设置: 反馈数据用于 RLS 参数估计 */
     power_control_->SetMotorData3508(motor_data_.output_current_3508,
                                      motor_data_.rotorspeed_rpm_3508);
 
     power_control_->CalculatePowerControlParam();
 
+    /* 计算速度跟踪误差 (输出轴角速度, rad/s) */
+    float speed_error[4];
     for (int i = 0; i < 4; i++) {
+      speed_error[i] = target_motor_omega_[i] -
+                       motor_feedback_[i].omega / PARAM.reduction_ratio;
       motor_data_.output_current_3508[i] =
           std::clamp(output_[i] * M3508_NM_TO_LSB_RATIO / PARAM.reduction_ratio,
                      -16384.0f, 16384.0f);
     }
 
+    /* 第二次设置: 指令电流 + 速度误差, 用于功率限制 */
     power_control_->SetMotorData3508(motor_data_.output_current_3508,
-                                     motor_data_.rotorspeed_rpm_3508);
+                                     motor_data_.rotorspeed_rpm_3508,
+                                     speed_error);
 
     /* 根据 boost 状态选择功率限制 */
     float max_power =
