@@ -12,12 +12,15 @@ depends: []
 
 #include <cmath>
 #include <cstdint>
+#include <cstdio>
+#include <cstring>
 
 #include "CMD.hpp"
 #include "Chassis.hpp"
 #include "Motor.hpp"
 #include "PowerControl.hpp"
 #include "RMMotor.hpp"
+#include "Referee.hpp"
 #include "app_framework.hpp"
 #include "cycle_value.hpp"
 #include "event.hpp"
@@ -27,6 +30,7 @@ depends: []
 #include "message.hpp"
 #include "pid.hpp"
 #include "timebase.hpp"
+#include "timer.hpp"
 
 #ifdef DEBUG
 #include "DebugCore.hpp"
@@ -35,7 +39,7 @@ depends: []
 #define M3508_NM_TO_LSB_RATIO \
   52437.5f /* 3508转子扭矩转化为电机控制单位的比例 */
 
-#define OMNI_MOTOR_MAX_OMEGA 52          /* 电机输出轴最大角速度 */
+#define OMNI_MOTOR_MAX_OMEGA 52        /* 电机输出轴最大角速度 */
 
 
 template <typename ChassisType>
@@ -51,6 +55,8 @@ class Omni {
     float wheel_resistance = 0.0f;
     float error_compensation = 0.0f;
     float gravity = 0.0f;
+    float rotor_speed_scale =
+        1.0f; /* 小陀螺转速缩放比例，降低可给平移留出更多功率 */
   };
   enum class ChassisMode : uint8_t {
     RELAX,
@@ -95,7 +101,7 @@ class Omni {
        Motor* motor_wheel_0, Motor* motor_wheel_1, Motor* motor_wheel_2,
        Motor* motor_wheel_3, Motor* motor_steer_0, Motor* motor_steer_1,
        Motor* motor_steer_2, Motor* motor_steer_3, CMD* cmd,
-       PowerControl* power_control, uint32_t task_stack_depth,
+       PowerControl* power_control, Referee* referee, uint32_t task_stack_depth,
        ChassisParam chassis_param, LibXR::PID<float>::Param pid_follow,
        LibXR::PID<float>::Param pid_velocity_x,
        LibXR::PID<float>::Param pid_velocity_y,
@@ -129,7 +135,8 @@ class Omni {
         pid_steer_speed_{pid_steer_speed_0, pid_steer_speed_1,
                          pid_steer_speed_2, pid_steer_speed_3},
         cmd_(cmd),
-        power_control_(power_control)
+        power_control_(power_control),
+        referee_(referee)
 #ifdef DEBUG
         ,
         cmd_file_(LibXR::RamFS::CreateFile(
@@ -164,6 +171,11 @@ class Omni {
 
     thread_.Create(this, ThreadFunction, "OmniChassisThread", task_stack_depth,
                    thread_priority);
+    if (referee_ != nullptr) {
+      timer_static_ = LibXR::Timer::CreateTask(DrawUI, this, 300);
+      LibXR::Timer::Add(timer_static_);
+      LibXR::Timer::Start(timer_static_);
+    }
 #ifdef DEBUG
     hw.template FindOrExit<LibXR::RamFS>({"ramfs"})->Add(cmd_file_);
 #endif
@@ -172,10 +184,20 @@ class Omni {
         [](bool in_isr, Omni* omni, uint32_t event_id) {
           UNUSED(in_isr);
           UNUSED(event_id);
-          omni->LostCtrl();
+          omni->chassis_event_ = ChassisMode::RELAX;
         },
         this);
+
+    auto start_ctrl_callback = LibXR::Callback<uint32_t>::Create(
+        [](bool in_isr, Omni* omni, uint32_t event_id) {
+          UNUSED(in_isr);
+          UNUSED(event_id);
+          omni->chassis_event_ = ChassisMode::RELAX;
+        },
+        this);
+
     cmd_->GetEvent().Register(CMD::CMD_EVENT_LOST_CTRL, lost_ctrl_callback);
+    cmd_->GetEvent().Register(CMD::CMD_EVENT_START_CTRL, start_ctrl_callback);
   }
 
   /**
@@ -187,11 +209,14 @@ class Omni {
     omni->mutex_.Lock();
 
     LibXR::Topic::ASyncSubscriber<CMD::ChassisCMD> cmd_suber("chassis_cmd");
+    LibXR::Topic::ASyncSubscriber<Referee::ChassisPack> referee_suber(
+        "chassis_ref");
     LibXR::Topic::ASyncSubscriber<LibXR::EulerAngle<float>> euler_suber(
         "ahrs_euler");
     LibXR::Topic::ASyncSubscriber<float> yawmotor_angle_suber("yawmotor_angle");
 
     cmd_suber.StartWaiting();
+    referee_suber.StartWaiting();
     euler_suber.StartWaiting();
     yawmotor_angle_suber.StartWaiting();
     omni->last_online_time_ = LibXR::Timebase::GetMicroseconds();
@@ -202,6 +227,12 @@ class Omni {
       if (cmd_suber.Available()) {
         omni->cmd_data_ = cmd_suber.GetData();
         cmd_suber.StartWaiting();
+      }
+
+      if (referee_suber.Available()) {
+        omni->referee_chassis_pack_ = referee_suber.GetData();
+        omni->referee_last_rx_time_ = LibXR::Timebase::GetMilliseconds();
+        referee_suber.StartWaiting();
       }
 
       if (euler_suber.Available()) {
@@ -260,7 +291,6 @@ class Omni {
     for (int i = 0; i < 4; i++) {
       pid_wheel_speed_[i].Reset();
     }
-
     mutex_.Unlock();
   }
 
@@ -322,6 +352,16 @@ class Omni {
       } break;
       default:
         break;
+    }
+
+    /* 小陀螺模式下，根据平移输入动态调整旋转速度，给平移让出功率 */
+    if (chassis_event_ == ChassisMode::ROTOR) {
+      float translation_magnitude =
+          sqrtf(target_vx_ * target_vx_ + target_vy_ * target_vy_);
+      if (translation_magnitude > 1e-3f) {
+        /* 有平移输入时，按比例缩小旋转速度 */
+        target_omega_ *= PARAM.rotor_speed_scale;
+      }
     }
   }
 
@@ -464,9 +504,21 @@ class Omni {
                                      motor_data_.rotorspeed_rpm_3508,
                                      speed_error);
 
-    /* 根据 boost 状态选择功率限制 */
-    float max_power =
-        cmd_data_.boost ? OMNI_CHASSIS_BOOST_POWER : OMNI_CHASSIS_MAX_POWER;
+    float max_power = referee_->GetChassisPowerLimit();
+
+    if (power_control_->IsOnline() && cmd_data_.boost == true &&
+        power_control_->GetPercent() > 0.8f) {
+      max_power = 140.0f;
+    } else if (power_control_->IsOnline() && cmd_data_.boost == true &&
+               power_control_->GetPercent() > 0.5f) {
+      max_power = 110.0f;
+    } else if (power_control_->IsOnline() && cmd_data_.boost == true &&
+               power_control_->GetPercent() > 0.25f) {
+      max_power = 80.0f;
+    } else {
+      max_power = referee_->GetChassisPowerLimit();
+    }
+
     power_control_->OutputLimit(max_power);
     power_control_data_ = power_control_->GetPowerControlData();
   }
@@ -528,6 +580,180 @@ class Omni {
 #ifdef DEBUG
   int DebugCommand(int argc, char** argv);
 #endif
+
+ private:
+  static constexpr uint16_t UI_SCREEN_W = 1920;
+  static constexpr uint16_t UI_SCREEN_H = 1080;
+  static constexpr uint16_t UI_LAYER_CHASSIS = 0;
+  static constexpr uint16_t UI_ORBIT_RADIUS = 260;
+  static constexpr uint16_t UI_ORBIT_DOT_RADIUS = 20;
+  static constexpr uint16_t UI_DEFAULT_WIDTH = 1;
+  static constexpr uint16_t UI_CHAR_WIDTH = 2;
+
+  static uint16_t GetClientID(uint16_t robot_id) {
+    if (robot_id > 100) {
+      return static_cast<uint16_t>(robot_id - 101 + 0x0165);
+    }
+    return static_cast<uint16_t>(robot_id + 0x0100);
+  }
+
+  static void SetFigureName(uint8_t (&dst)[3], const char* name) {
+    dst[0] = ' ';
+    dst[1] = ' ';
+    dst[2] = ' ';
+    if (name == nullptr) {
+      return;
+    }
+    for (int i = 0; i < 3 && name[i] != '\0'; ++i) {
+      dst[i] = static_cast<uint8_t>(name[i]);
+    }
+  }
+
+  static void FillCharacter(Referee::UICharacter& fig, const char* name,
+                            Referee::UIFigureOp op, uint8_t layer,
+                            Referee::UIColor color, uint16_t font_size,
+                            uint16_t width, uint16_t x, uint16_t y,
+                            const char* text) {
+    fig = {};
+    SetFigureName(fig.grapic_data_struct.figure_name, name);
+    fig.grapic_data_struct.operate_type = static_cast<uint32_t>(op);
+    fig.grapic_data_struct.figure_type =
+        static_cast<uint32_t>(Referee::UIFigureType::UI_TYPE_CHAR);
+    fig.grapic_data_struct.layer = layer;
+    fig.grapic_data_struct.color = static_cast<uint32_t>(color);
+    fig.grapic_data_struct.details_a = font_size;
+
+    uint16_t text_len = 0;
+    if (text != nullptr) {
+      text_len = static_cast<uint16_t>(strnlen(text, sizeof(fig.data)));
+      memcpy(fig.data, text, text_len);
+    }
+    fig.grapic_data_struct.details_b = text_len;
+    fig.grapic_data_struct.width = width;
+    fig.grapic_data_struct.start_x = x;
+    fig.grapic_data_struct.start_y = y;
+  }
+
+  static void FillCircle(Referee::UIFigure& fig, const char* name,
+                         Referee::UIFigureOp op, uint8_t layer,
+                         Referee::UIColor color, uint16_t width, uint16_t x,
+                         uint16_t y, uint16_t radius) {
+    fig = {};
+    SetFigureName(fig.figure_name, name);
+    fig.operate_type = static_cast<uint32_t>(op);
+    fig.figure_type =
+        static_cast<uint32_t>(Referee::UIFigureType::UI_TYPE_CIRCLE);
+    fig.layer = layer;
+    fig.color = static_cast<uint32_t>(color);
+    fig.width = width;
+    fig.start_x = x;
+    fig.start_y = y;
+    fig.details_c = radius;
+  }
+
+  /* 定时器回调：仅保留底盘模式、车头方位圆、超电容量 */
+  static void DrawUI(Omni* omni) {
+    if (omni->referee_ == nullptr) return;
+    const uint16_t id = omni->referee_->GetRobotID();
+    if (id == 0) return;
+    const uint16_t client = GetClientID(id);
+
+    if (!omni->ui_layer_cleared_) {
+      Referee::UILayerDelete ui_del{};
+      ui_del.delete_type =
+          static_cast<uint8_t>(Referee::UIDeleteType::UI_DELETE_LAYER);
+      ui_del.layer = UI_LAYER_CHASSIS;
+      const ErrorCode EC =
+          omni->referee_->SendUILayerDelete(id, client, ui_del);
+      if (EC != ErrorCode::OK) {
+        return;
+      }
+
+      // Layer 删除后需要重新 ADD 当前保留图元，避免只发 MODIFY。
+      omni->ui_initialized_ = false;
+      omni->ui_dot_initialized_ = false;
+      omni->ui_cap_initialized_ = false;
+      omni->ui_layer_cleared_ = true;
+    }
+
+    omni->ui_tick_++;
+
+    switch (omni->ui_tick_ % 3) {
+      case 0: {
+        omni->mutex_.Lock();
+        const ChassisMode mode = omni->chassis_event_;
+        omni->mutex_.Unlock();
+        const char* mode_str = "RELX";
+        switch (mode) {
+          case ChassisMode::RELAX:
+            mode_str = "RELX";
+            break;
+          case ChassisMode::INDEPENDENT:
+            mode_str = "INDP";
+            break;
+          case ChassisMode::ROTOR:
+            mode_str = "ROTO";
+            break;
+          case ChassisMode::FOLLOW:
+            mode_str = "FOLW";
+            break;
+          default:
+            break;
+        }
+        const Referee::UIFigureOp OP = omni->ui_initialized_
+                                           ? Referee::UIFigureOp::UI_OP_MODIFY
+                                           : Referee::UIFigureOp::UI_OP_ADD;
+        Referee::UICharacter char_fig{};
+        FillCharacter(char_fig, "CM", OP, UI_LAYER_CHASSIS,
+                      Referee::UIColor::UI_COLOR_CYAN, 20, UI_CHAR_WIDTH, 160,
+                      580, mode_str);
+        if (omni->referee_->SendUICharacter(id, client, char_fig) ==
+            ErrorCode::OK) {
+          omni->ui_initialized_ = true;
+        }
+        break;
+      }
+      case 1: {
+        const Referee::UIFigureOp OP = omni->ui_dot_initialized_
+                                           ? Referee::UIFigureOp::UI_OP_MODIFY
+                                           : Referee::UIFigureOp::UI_OP_ADD;
+        const uint16_t DOT_X = static_cast<uint16_t>(
+            UI_SCREEN_W / 2 + UI_ORBIT_RADIUS * sinf(omni->chassis_yaw_));
+        const uint16_t DOT_Y = static_cast<uint16_t>(
+            UI_SCREEN_H / 2 + UI_ORBIT_RADIUS * cosf(omni->chassis_yaw_));
+        Referee::UIFigure fig{};
+        FillCircle(fig, "CS", OP, UI_LAYER_CHASSIS,
+                   Referee::UIColor::UI_COLOR_CYAN, UI_DEFAULT_WIDTH * 7, DOT_X,
+                   DOT_Y, UI_ORBIT_DOT_RADIUS);
+        if (omni->referee_->SendUIFigure(id, client, fig) == ErrorCode::OK) {
+          omni->ui_dot_initialized_ = true;
+        }
+        break;
+      }
+      case 2: {
+        char buf[10];
+        if (omni->power_control_->IsOnline()) {
+          const int CAP_PERCENT =
+              static_cast<int>(omni->power_control_->GetPercent() * 100.0f);
+          snprintf(buf, sizeof(buf), "SC%3d%%", CAP_PERCENT);
+        } else {
+          snprintf(buf, sizeof(buf), "SC --%%");
+        }
+        const Referee::UIFigureOp OP = omni->ui_cap_initialized_
+                                           ? Referee::UIFigureOp::UI_OP_MODIFY
+                                           : Referee::UIFigureOp::UI_OP_ADD;
+        Referee::UICharacter char_fig{};
+        FillCharacter(char_fig, "SC", OP, UI_LAYER_CHASSIS,
+                      Referee::UIColor::UI_COLOR_GREEN, 20, UI_CHAR_WIDTH, 160,
+                      500, buf);
+        if (omni->referee_->SendUICharacter(id, client, char_fig) ==
+            ErrorCode::OK) {
+          omni->ui_cap_initialized_ = true;
+        }
+        break;
+      }
+    }
+  }
 
  private:
   const ChassisParam PARAM;
@@ -593,6 +819,8 @@ class Omni {
 
   CMD* cmd_;
   CMD::ChassisCMD cmd_data_;
+  Referee::ChassisPack referee_chassis_pack_{};
+  LibXR::MillisecondTimestamp referee_last_rx_time_ = 0;
 
   Motor::MotorCmd motor_cmd_[4]{};
 
@@ -601,6 +829,14 @@ class Omni {
   PowerControlData power_control_data_;
   LibXR::EulerAngle<float> euler_;
   ChassisMode chassis_event_ = ChassisMode::RELAX;
+
+  Referee* referee_;
+  bool ui_initialized_ = false;
+  bool ui_dot_initialized_ = false;
+  bool ui_cap_initialized_ = false;
+  bool ui_layer_cleared_ = false;
+  uint32_t ui_tick_ = 0;
+  LibXR::Timer::TimerHandle timer_static_;
 
 #ifdef DEBUG
   LibXR::RamFS::File cmd_file_;

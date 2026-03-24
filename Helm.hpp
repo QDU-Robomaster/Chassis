@@ -28,6 +28,7 @@ depends: []
 #include "libxr_time.hpp"
 #include "pid.hpp"
 #include "timebase.hpp"
+#include "Referee.hpp"
 
 #ifdef DEBUG
 #include "DebugCore.hpp"
@@ -90,8 +91,9 @@ class Helm {
        Motor* motor_wheel_0, Motor* motor_wheel_1, Motor* motor_wheel_2,
        Motor* motor_wheel_3, Motor* motor_steer_0, Motor* motor_steer_1,
        Motor* motor_steer_2, Motor* motor_steer_3, CMD* cmd,
-       PowerControl* power_control, uint32_t task_stack_depth,
-       ChassisParam chassis_param, LibXR::PID<float>::Param pid_follow,
+       PowerControl* power_control, Referee* referee_,
+       uint32_t task_stack_depth, ChassisParam chassis_param,
+       LibXR::PID<float>::Param pid_follow,
        LibXR::PID<float>::Param pid_velocity_x,
        LibXR::PID<float>::Param pid_velocity_y,
        LibXR::PID<float>::Param pid_omega,
@@ -132,7 +134,8 @@ class Helm {
         pid_steer_speed_{pid_steer_speed_0, pid_steer_speed_1,
                          pid_steer_speed_2, pid_steer_speed_3},
         cmd_(cmd),
-        power_control_(power_control)
+        power_control_(power_control),
+        referee_(referee_)
 #ifdef DEBUG
         ,
         cmd_file_(LibXR::RamFS::CreateFile(
@@ -328,7 +331,22 @@ class Helm {
                                      motor_data_.rotorspeed_rpm_6020,
                                      speed_error_6020);
 
-    power_control_->OutputLimit(HELM_CHASSIS_MAX_POWER);
+    float max_power = referee_->GetChassisPowerLimit();
+
+    if (power_control_->IsOnline() && cmd_data_.boost == true &&
+        power_control_->GetPercent() > 0.8f) {
+      max_power += 100.0f;
+    } else if (power_control_->IsOnline() && cmd_data_.boost == true &&
+               power_control_->GetPercent() > 0.5f) {
+      max_power += 70.0f;
+    } else if (power_control_->IsOnline() && cmd_data_.boost == true &&
+               power_control_->GetPercent() > 0.25f) {
+      max_power += 40.0f;
+    } else {
+      max_power = referee_->GetChassisPowerLimit();
+    }
+
+    power_control_->OutputLimit(max_power);
     power_control_data_ = power_control_->GetPowerControlData();
   }
 
@@ -580,6 +598,7 @@ class Helm {
   PowerControl* power_control_;
   PowerControlData power_control_data_;
 
+  Referee* referee_;
   LibXR::Thread thread_;
   LibXR::Mutex mutex_;
 
