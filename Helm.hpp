@@ -19,6 +19,7 @@ depends: []
 #include "Motor.hpp"
 #include "PowerControl.hpp"
 #include "RMMotor.hpp"
+#include "Referee.hpp"
 #include "app_framework.hpp"
 #include "cycle_value.hpp"
 #include "dsp/fast_math_functions.h"
@@ -28,7 +29,6 @@ depends: []
 #include "libxr_time.hpp"
 #include "pid.hpp"
 #include "timebase.hpp"
-#include "Referee.hpp"
 
 #ifdef DEBUG
 #include "DebugCore.hpp"
@@ -37,7 +37,7 @@ depends: []
 #define M3508_NM_TO_LSB_RATIO \
   52437.5f /* 3508转子扭矩转化为电机控制单位的比例 */
 #define GM6020_NM_TO_LSB_RATIO \
-  7370.0f                             /* 6020转子扭矩转化为电机控制单位的比例 */
+  7370.0f /* 6020转子扭矩转化为电机控制单位的比例 */
 
 template <typename ChassisType>
 class Chassis;
@@ -91,9 +91,8 @@ class Helm {
        Motor* motor_wheel_0, Motor* motor_wheel_1, Motor* motor_wheel_2,
        Motor* motor_wheel_3, Motor* motor_steer_0, Motor* motor_steer_1,
        Motor* motor_steer_2, Motor* motor_steer_3, CMD* cmd,
-       PowerControl* power_control, Referee* referee_,
-       uint32_t task_stack_depth, ChassisParam chassis_param,
-       LibXR::PID<float>::Param pid_follow,
+       PowerControl* power_control, uint32_t task_stack_depth,
+       ChassisParam chassis_param, LibXR::PID<float>::Param pid_follow,
        LibXR::PID<float>::Param pid_velocity_x,
        LibXR::PID<float>::Param pid_velocity_y,
        LibXR::PID<float>::Param pid_omega,
@@ -134,8 +133,7 @@ class Helm {
         pid_steer_speed_{pid_steer_speed_0, pid_steer_speed_1,
                          pid_steer_speed_2, pid_steer_speed_3},
         cmd_(cmd),
-        power_control_(power_control),
-        referee_(referee_)
+        power_control_(power_control)
 #ifdef DEBUG
         ,
         cmd_file_(LibXR::RamFS::CreateFile(
@@ -188,9 +186,12 @@ class Helm {
     helm->mutex_.Lock();
 
     LibXR::Topic::ASyncSubscriber<CMD::ChassisCMD> cmd_suber("chassis_cmd");
+    LibXR::Topic::ASyncSubscriber<Referee::ChassisPack> referee_suber(
+        "chassis_ref");
     LibXR::Topic::ASyncSubscriber<float> yawmotor_angle_suber("yawmotor_angle");
 
     cmd_suber.StartWaiting();
+    referee_suber.StartWaiting();
     yawmotor_angle_suber.StartWaiting();
 
     helm->last_online_time_ = LibXR::Timebase::GetMicroseconds();
@@ -201,6 +202,12 @@ class Helm {
       if (cmd_suber.Available()) {
         helm->cmd_data_ = cmd_suber.GetData();
         cmd_suber.StartWaiting();
+      }
+
+      if (referee_suber.Available()) {
+        helm->referee_chassis_pack_ = referee_suber.GetData();
+        helm->referee_last_rx_time_ = LibXR::Timebase::GetMilliseconds();
+        referee_suber.StartWaiting();
       }
 
       if (yawmotor_angle_suber.Available()) {
@@ -331,19 +338,24 @@ class Helm {
                                      motor_data_.rotorspeed_rpm_6020,
                                      speed_error_6020);
 
-    float max_power = referee_->GetChassisPowerLimit();
+    float max_power =
+        static_cast<float>(referee_chassis_pack_.rs.chassis_power_limit);
+
+    auto now_ms = LibXR::Timebase::GetMilliseconds();
+    if ((now_ms - referee_last_rx_time_).ToSecondf() > 1.0f ||
+        max_power <= 1.0f) {
+      max_power = 60.0f;
+    }
 
     if (power_control_->IsOnline() && cmd_data_.boost == true &&
-        power_control_->GetPercent() > 0.8f) {
+        power_control_->GetCapEnergy() > 0.8f) {
       max_power += 100.0f;
     } else if (power_control_->IsOnline() && cmd_data_.boost == true &&
-               power_control_->GetPercent() > 0.5f) {
+               power_control_->GetCapEnergy() > 0.5f) {
       max_power += 70.0f;
     } else if (power_control_->IsOnline() && cmd_data_.boost == true &&
-               power_control_->GetPercent() > 0.25f) {
+               power_control_->GetCapEnergy() > 0.25f) {
       max_power += 40.0f;
-    } else {
-      max_power = referee_->GetChassisPowerLimit();
     }
 
     power_control_->OutputLimit(max_power);
@@ -355,8 +367,6 @@ class Helm {
    * @details 多模式控制底盘
    */
   void Helmcontrol() {
-    // if()
-
     // 计算 vx,xy
     switch (chassis_event_) {
       case (ChassisMode::RELAX):
@@ -389,7 +399,7 @@ class Helm {
         target_omega_ = 0.0f;
         break;
       case (ChassisMode::INDEPENDENT):
-        //   /* 独立模式每个轮子的方向相同，wz当作轮子转向角速度 */
+     /* 独立模式每个轮子的方向相同，wz当作轮子转向角速度 */
         target_omega_ = -cmd_data_.z;
         break;
       case (ChassisMode::FOLLOW):
@@ -598,7 +608,8 @@ class Helm {
   PowerControl* power_control_;
   PowerControlData power_control_data_;
 
-  Referee* referee_;
+  Referee::ChassisPack referee_chassis_pack_{};
+  LibXR::MillisecondTimestamp referee_last_rx_time_ = 0;
   LibXR::Thread thread_;
   LibXR::Mutex mutex_;
 

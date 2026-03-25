@@ -39,8 +39,7 @@ depends: []
 #define M3508_NM_TO_LSB_RATIO \
   52437.5f /* 3508转子扭矩转化为电机控制单位的比例 */
 
-#define OMNI_MOTOR_MAX_OMEGA 52        /* 电机输出轴最大角速度 */
-
+#define OMNI_MOTOR_MAX_OMEGA 52 /* 电机输出轴最大角速度 */
 
 template <typename ChassisType>
 class Chassis;
@@ -180,14 +179,6 @@ class Omni {
     hw.template FindOrExit<LibXR::RamFS>({"ramfs"})->Add(cmd_file_);
 #endif
 
-    auto lost_ctrl_callback = LibXR::Callback<uint32_t>::Create(
-        [](bool in_isr, Omni* omni, uint32_t event_id) {
-          UNUSED(in_isr);
-          UNUSED(event_id);
-          omni->chassis_event_ = ChassisMode::RELAX;
-        },
-        this);
-
     auto start_ctrl_callback = LibXR::Callback<uint32_t>::Create(
         [](bool in_isr, Omni* omni, uint32_t event_id) {
           UNUSED(in_isr);
@@ -196,8 +187,17 @@ class Omni {
         },
         this);
 
-    cmd_->GetEvent().Register(CMD::CMD_EVENT_LOST_CTRL, lost_ctrl_callback);
+    auto lost_ctrl_callback = LibXR::Callback<uint32_t>::Create(
+        [](bool in_isr, Omni* omni, uint32_t event_id) {
+          UNUSED(in_isr);
+          UNUSED(event_id);
+          omni->chassis_event_ = ChassisMode::RELAX;
+        },
+        this);
+
     cmd_->GetEvent().Register(CMD::CMD_EVENT_START_CTRL, start_ctrl_callback);
+    cmd_->GetEvent().Register(CMD::CMD_EVENT_LOST_CTRL, lost_ctrl_callback);
+
   }
 
   /**
@@ -304,8 +304,6 @@ class Omni {
     /*计算omega*/
     switch (chassis_event_) {
       case ChassisMode::RELAX:
-        target_vx_ = 0.0f;
-        target_vy_ = 0.0f;
         target_omega_ = 0.0f;
         break;
 
@@ -489,8 +487,8 @@ class Omni {
 
     power_control_->CalculatePowerControlParam();
 
-    /* 计算速度跟踪误差 (输出轴角速度, rad/s) */
     float speed_error[4];
+
     for (int i = 0; i < 4; i++) {
       speed_error[i] = target_motor_omega_[i] -
                        motor_feedback_[i].omega / PARAM.reduction_ratio;
@@ -504,19 +502,24 @@ class Omni {
                                      motor_data_.rotorspeed_rpm_3508,
                                      speed_error);
 
-    float max_power = referee_->GetChassisPowerLimit();
+    float max_power =
+        static_cast<float>(referee_chassis_pack_.rs.chassis_power_limit);
+
+    auto now_ms = LibXR::Timebase::GetMilliseconds();
+    if ((now_ms - referee_last_rx_time_).ToSecondf() > 1.0f ||
+        max_power <= 1.0f) {
+      max_power = 60.0f;
+    }
 
     if (power_control_->IsOnline() && cmd_data_.boost == true &&
-        power_control_->GetPercent() > 0.8f) {
-      max_power = 140.0f;
+        power_control_->GetCapEnergy() > 0.8f) {
+      max_power += 100.0f;
     } else if (power_control_->IsOnline() && cmd_data_.boost == true &&
-               power_control_->GetPercent() > 0.5f) {
-      max_power = 110.0f;
+               power_control_->GetCapEnergy() > 0.5f) {
+      max_power += 60.0f;
     } else if (power_control_->IsOnline() && cmd_data_.boost == true &&
-               power_control_->GetPercent() > 0.25f) {
-      max_power = 80.0f;
-    } else {
-      max_power = referee_->GetChassisPowerLimit();
+               power_control_->GetCapEnergy() > 0.25f) {
+      max_power += 40.0f;
     }
 
     power_control_->OutputLimit(max_power);
@@ -582,6 +585,11 @@ class Omni {
 #endif
 
  private:
+  // UI 参数约定：
+  // - SCREEN_W/H: 客户端坐标系分辨率（用于计算中心点和绝对位置）
+  // - LAYER_CHASSIS: 底盘 UI 专用图层
+  // - ORBIT_*: 车头方位点绕屏幕中心旋转的轨迹半径/点半径
+  // - DEFAULT_WIDTH/CHAR_WIDTH: 图形线宽与字符线宽
   static constexpr uint16_t UI_SCREEN_W = 1920;
   static constexpr uint16_t UI_SCREEN_H = 1080;
   static constexpr uint16_t UI_LAYER_CHASSIS = 0;
@@ -590,13 +598,17 @@ class Omni {
   static constexpr uint16_t UI_DEFAULT_WIDTH = 1;
   static constexpr uint16_t UI_CHAR_WIDTH = 2;
 
+    // 裁判系统客户端 ID 与机器人 ID 的映射关系。
   static uint16_t GetClientID(uint16_t robot_id) {
+    /* 蓝方 */
     if (robot_id > 100) {
       return static_cast<uint16_t>(robot_id - 101 + 0x0165);
     }
+    /* 红方 */
     return static_cast<uint16_t>(robot_id + 0x0100);
   }
 
+    // 图元名固定为 3 字节，不足补空格，便于后续按名称 MODIFY。
   static void SetFigureName(uint8_t (&dst)[3], const char* name) {
     dst[0] = ' ';
     dst[1] = ' ';
@@ -614,6 +626,7 @@ class Omni {
                             Referee::UIColor color, uint16_t font_size,
                             uint16_t width, uint16_t x, uint16_t y,
                             const char* text) {
+    // 每次都从空结构体开始，避免复用旧数据导致字段污染。
     fig = {};
     SetFigureName(fig.grapic_data_struct.figure_name, name);
     fig.grapic_data_struct.operate_type = static_cast<uint32_t>(op);
@@ -625,6 +638,7 @@ class Omni {
 
     uint16_t text_len = 0;
     if (text != nullptr) {
+      // 文本长度受 fig.data 缓冲区限制，防止越界。
       text_len = static_cast<uint16_t>(strnlen(text, sizeof(fig.data)));
       memcpy(fig.data, text, text_len);
     }
@@ -638,6 +652,7 @@ class Omni {
                          Referee::UIFigureOp op, uint8_t layer,
                          Referee::UIColor color, uint16_t width, uint16_t x,
                          uint16_t y, uint16_t radius) {
+    // 圆形图元统一通过此函数填充，确保字段含义一致。
     fig = {};
     SetFigureName(fig.figure_name, name);
     fig.operate_type = static_cast<uint32_t>(op);
@@ -654,11 +669,12 @@ class Omni {
   /* 定时器回调：仅保留底盘模式、车头方位圆、超电容量 */
   static void DrawUI(Omni* omni) {
     if (omni->referee_ == nullptr) return;
-    const uint16_t id = omni->referee_->GetRobotID();
+    const uint16_t id = omni->referee_chassis_pack_.rs.robot_id;
     if (id == 0) return;
     const uint16_t client = GetClientID(id);
 
     if (!omni->ui_layer_cleared_) {
+      // 上电后先清一次目标图层，确保本模块接管该层时画面可预期。
       Referee::UILayerDelete ui_del{};
       ui_del.delete_type =
           static_cast<uint8_t>(Referee::UIDeleteType::UI_DELETE_LAYER);
@@ -676,10 +692,12 @@ class Omni {
       omni->ui_layer_cleared_ = true;
     }
 
+    // 将 3 类 UI 内容分 3 帧发送，降低单帧通信负载。
     omni->ui_tick_++;
 
     switch (omni->ui_tick_ % 3) {
       case 0: {
+        // 文本模式显示：底盘模式字符串。
         omni->mutex_.Lock();
         const ChassisMode mode = omni->chassis_event_;
         omni->mutex_.Unlock();
@@ -700,6 +718,7 @@ class Omni {
           default:
             break;
         }
+        // 首次发送用 ADD，后续同名图元用 MODIFY 做增量更新。
         const Referee::UIFigureOp OP = omni->ui_initialized_
                                            ? Referee::UIFigureOp::UI_OP_MODIFY
                                            : Referee::UIFigureOp::UI_OP_ADD;
@@ -714,6 +733,7 @@ class Omni {
         break;
       }
       case 1: {
+        // 车头方位点：以屏幕中心为圆心，按 chassis_yaw_ 投影到圆周。
         const Referee::UIFigureOp OP = omni->ui_dot_initialized_
                                            ? Referee::UIFigureOp::UI_OP_MODIFY
                                            : Referee::UIFigureOp::UI_OP_ADD;
@@ -731,10 +751,11 @@ class Omni {
         break;
       }
       case 2: {
+        // 超电容量显示：在线显示百分比，离线显示占位符。
         char buf[10];
         if (omni->power_control_->IsOnline()) {
           const int CAP_PERCENT =
-              static_cast<int>(omni->power_control_->GetPercent() * 100.0f);
+              static_cast<int>(omni->power_control_->GetCapEnergy() * 100.0f);
           snprintf(buf, sizeof(buf), "SC%3d%%", CAP_PERCENT);
         } else {
           snprintf(buf, sizeof(buf), "SC --%%");
@@ -790,8 +811,9 @@ class Omni {
 
   Motor* motor_wheel_[4]{motor_wheel_0_, motor_wheel_1_, motor_wheel_2_,
                          motor_wheel_3_};
-
   Motor::Feedback motor_feedback_[4]{};
+  Motor::MotorCmd motor_cmd_[4]{};
+  MotorData motor_data_{};
 
   LibXR::PID<float> pid_follow_;
   LibXR::PID<float> pid_velocity_x_;
@@ -814,23 +836,23 @@ class Omni {
       LibXR::PID<float>(LibXR::PID<float>::Param()),
       LibXR::PID<float>(LibXR::PID<float>::Param()),
       LibXR::PID<float>(LibXR::PID<float>::Param())};
+
   LibXR::Thread thread_;
   LibXR::Mutex mutex_;
 
   CMD* cmd_;
   CMD::ChassisCMD cmd_data_;
+
+  PowerControl* power_control_;
+  PowerControlData power_control_data_;
+
+  Referee* referee_;
   Referee::ChassisPack referee_chassis_pack_{};
   LibXR::MillisecondTimestamp referee_last_rx_time_ = 0;
 
-  Motor::MotorCmd motor_cmd_[4]{};
-
-  MotorData motor_data_{};
-  PowerControl* power_control_;
-  PowerControlData power_control_data_;
   LibXR::EulerAngle<float> euler_;
   ChassisMode chassis_event_ = ChassisMode::RELAX;
 
-  Referee* referee_;
   bool ui_initialized_ = false;
   bool ui_dot_initialized_ = false;
   bool ui_cap_initialized_ = false;

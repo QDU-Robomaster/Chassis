@@ -34,8 +34,6 @@ depends: []
   52437.5f /* 3508转子扭矩转化为电机控制单位的比例 */
 
 #define MECANUM_MOTOR_MAX_OMEGA 52         /* 电机输出轴最大角速度 */
-#define MECANUM_CHASSIS_MAX_POWER 60.0f    /* 底盘最大功率 */
-#define MECANUM_CHASSIS_BOOST_POWER 120.0f /* 底盘加速模式功率(Shift) */
 
 template <typename ChassisType>
 class Chassis;
@@ -50,6 +48,8 @@ class Mecanum {
     float wheel_resistance = 0.0f;
     float error_compensation = 0.0f;
     float gravity = 0.0f;
+    float rotor_speed_scale =
+        1.0f; /* 小陀螺转速缩放比例，降低可给平移留出更多功率 */
   };
 
   enum class ChassisMode : uint8_t {
@@ -162,13 +162,24 @@ class Mecanum {
 #ifdef DEBUG
     hw.template FindOrExit<LibXR::RamFS>({"ramfs"})->Add(cmd_file_);
 #endif
+
+    auto start_ctrl_callback = LibXR::Callback<uint32_t>::Create(
+        [](bool in_isr, Mecanum* mecanum, uint32_t event_id) {
+          UNUSED(in_isr);
+          UNUSED(event_id);
+          mecanum->chassis_event_ = ChassisMode::RELAX;
+        },
+        this);
+
     auto lost_ctrl_callback = LibXR::Callback<uint32_t>::Create(
         [](bool in_isr, Mecanum* mecanum, uint32_t event_id) {
           UNUSED(in_isr);
           UNUSED(event_id);
-          mecanum->LostCtrl();
+          mecanum->chassis_event_ = ChassisMode::RELAX;
         },
         this);
+
+    cmd_->GetEvent().Register(CMD::CMD_EVENT_START_CTRL, start_ctrl_callback);
     cmd_->GetEvent().Register(CMD::CMD_EVENT_LOST_CTRL, lost_ctrl_callback);
   }
 
@@ -259,18 +270,18 @@ class Mecanum {
       case (ChassisMode::RELAX):
         target_omega_ = 0.0f;
         break;
-      case (ChassisMode::ROTOR):
-        this->target_omega_ = PARAM.wheel_radius * MECANUM_MOTOR_MAX_OMEGA /
-                              PARAM.wheel_to_center;
-        break;
-        /*TODO:这里可能有点问题*/
-      case (ChassisMode::FOLLOW):
-        target_omega_ = this->pid_follow_.Calculate(0.0f, -current_yaw_, dt_);
-        break;
+
       case (ChassisMode::INDEPENDENT):
-        target_omega_ = -cmd_data_.z * MECANUM_MOTOR_MAX_OMEGA *
-                        PARAM.wheel_radius / PARAM.wheel_to_center;
+        target_omega_ = - max_v * cmd_data_.z / PARAM.wheel_to_center;
+
+      case (ChassisMode::ROTOR):
+        this->target_omega_ = static_cast<float>(max_v / PARAM.wheel_to_center);
         break;
+
+      case (ChassisMode::FOLLOW):
+        target_omega_ = pid_follow_.Calculate(0.0f, -current_yaw_, dt_);
+        break;
+
       default:
         break;
     }
@@ -297,6 +308,16 @@ class Mecanum {
       } break;
       default:
         break;
+    }
+
+    /* 小陀螺模式下，根据平移输入动态调整旋转速度，给平移让出功率 */
+    if (chassis_event_ == ChassisMode::ROTOR) {
+      float translation_magnitude =
+          sqrtf(target_vx_ * target_vx_ + target_vy_ * target_vy_);
+      if (translation_magnitude > 1e-3f) {
+        /* 有平移输入时，按比例缩小旋转速度 */
+        target_omega_ *= PARAM.rotor_speed_scale;
+      }
     }
   }
 
@@ -378,18 +399,40 @@ class Mecanum {
 
     power_control_->CalculatePowerControlParam();
 
+    float speed_error[4];
+
     for (int i = 0; i < 4; i++) {
+      speed_error[i] = target_motor_omega_[i] -
+                       motor_feedback_[i].omega / PARAM.reduction_ratio;
       motor_data_.output_current_3508[i] =
           std::clamp(output_[i] * M3508_NM_TO_LSB_RATIO / PARAM.reduction_ratio,
                      -16384.0f, 16384.0f);
     }
 
     power_control_->SetMotorData3508(motor_data_.output_current_3508,
-                                     motor_data_.rotorspeed_rpm_3508);
+                                     motor_data_.rotorspeed_rpm_3508,
+                                    speed_error);
 
-    /* 根据 boost 状态选择功率限制 */
-    float max_power = cmd_data_.boost ? MECANUM_CHASSIS_BOOST_POWER
-                                      : MECANUM_CHASSIS_MAX_POWER;
+    float max_power =
+        static_cast<float>(referee_chassis_pack_.rs.chassis_power_limit);
+
+    auto now_ms = LibXR::Timebase::GetMilliseconds();
+    if ((now_ms - referee_last_rx_time_).ToSecondf() > 1.0f ||
+        max_power <= 1.0f) {
+      max_power = 60.0f;
+    }
+
+    if (power_control_->IsOnline() && cmd_data_.boost == true &&
+        power_control_->GetCapEnergy() > 0.8f) {
+      max_power += 100.0f;
+    } else if (power_control_->IsOnline() && cmd_data_.boost == true &&
+               power_control_->GetCapEnergy() > 0.5f) {
+      max_power += 60.0f;
+    } else if (power_control_->IsOnline() && cmd_data_.boost == true &&
+               power_control_->GetCapEnergy() > 0.25f) {
+      max_power += 40.0f;
+    }
+
     power_control_->OutputLimit(max_power);
     power_control_data_ = power_control_->GetPowerControlData();
   }
@@ -466,6 +509,7 @@ class Mecanum {
   float target_vx_ = 0.0f;
   float target_vy_ = 0.0f;
   float target_omega_ = 0.0f;
+
   float current_yaw_ = 0.0f;
   float yawmotor_zero_ = 0.959505022f;
 
@@ -479,8 +523,9 @@ class Mecanum {
 
   Motor* motor_wheel_[4]{motor_wheel_0_, motor_wheel_1_, motor_wheel_2_,
                          motor_wheel_3_};
-
   Motor::Feedback motor_feedback_[4]{};
+  Motor::MotorCmd motor_cmd_[4]{};
+  MotorData motor_data_{};
 
   LibXR::PID<float> pid_follow_;
   LibXR::PID<float> pid_velocity_x_;
@@ -507,11 +552,11 @@ class Mecanum {
   CMD* cmd_;
   CMD::ChassisCMD cmd_data_;
 
-  Motor::MotorCmd motor_cmd_[4]{};
-
-  MotorData motor_data_{};
   PowerControl* power_control_;
   PowerControlData power_control_data_;
+
+  LibXR::MillisecondTimestamp referee_last_rx_time_ = 0;
+  Referee::ChassisPack referee_chassis_pack_{};
 
   LibXR::Thread thread_;
   LibXR::Mutex mutex_;
