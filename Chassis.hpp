@@ -14,6 +14,7 @@ constructor_args:
   - motor_steer_3: '@&motor_steer_3'
   - cmd: '@&cmd'
   - power_control: '@&power_control'
+  - referee: '@&ref'
   - task_stack_depth: 4096
   - ChassisParam:
       wheel_radius: 0.065
@@ -151,7 +152,7 @@ constructor_args:
       i_limit: 0.0
       out_limit: 0.0
       cycle: false
-  - thread_priority: LibXR::Thread::Priority::HIGH
+- thread_priority: LibXR::Thread::Priority::HIGH
 template_args:
   - ChassisType: Omni
 required_hardware:
@@ -182,6 +183,7 @@ struct MotorData {
 #include "Motor.hpp"
 #include "Omni.hpp"
 #include "RMMotor.hpp"
+#include "Referee.hpp"
 #include "app_framework.hpp"
 #include "libxr_def.hpp"
 #include "pid.hpp"
@@ -198,6 +200,7 @@ class Chassis : public LibXR::Application {
     float wheel_resistance = 0.0f;
     float error_compensation = 0.0f;
     float gravity = 0.0f;
+    float rotor_speed_scale = 1.0f;
   };
 
   Chassis(
@@ -205,7 +208,7 @@ class Chassis : public LibXR::Application {
       Motor* motor_wheel_0, Motor* motor_wheel_1, Motor* motor_wheel_2,
       Motor* motor_wheel_3, Motor* motor_steer_0, Motor* motor_steer_1,
       Motor* motor_steer_2, Motor* motor_steer_3, CMD* cmd,
-      PowerControl* power_control, uint32_t task_stack_depth,
+      PowerControl* power_control, Referee* referee, uint32_t task_stack_depth,
       ChassisParam chassis_param = {},
       LibXR::PID<float>::Param pid_follow_ = {},
       LibXR::PID<float>::Param pid_velocity_x_ = {},
@@ -227,18 +230,20 @@ class Chassis : public LibXR::Application {
       : chassis_(
             hw, app, motor_wheel_0, motor_wheel_1, motor_wheel_2, motor_wheel_3,
             motor_steer_0, motor_steer_1, motor_steer_2, motor_steer_3, cmd,
-            power_control, task_stack_depth,
+            power_control, referee, task_stack_depth,
             typename ChassisType::ChassisParam{
                 chassis_param.wheel_radius, chassis_param.wheel_to_center,
                 chassis_param.gravity_height, chassis_param.reduction_ratio,
                 chassis_param.wheel_resistance,
-                chassis_param.error_compensation},
+                chassis_param.error_compensation, chassis_param.gravity,
+                chassis_param.rotor_speed_scale},
             pid_follow_, pid_velocity_x_, pid_velocity_y_, pid_omega_,
             pid_wheel_speed_0_, pid_wheel_speed_1_, pid_wheel_speed_2_,
             pid_wheel_speed_3_, pid_steer_angle_0_, pid_steer_angle_1_,
             pid_steer_angle_2_, pid_steer_angle_3_, pid_steer_speed_0_,
             pid_steer_speed_1_, pid_steer_speed_2_, pid_steer_speed_3_,
-            thread_priority) {
+            thread_priority),
+        referee_(referee) {
     auto callback = LibXR::Callback<uint32_t>::Create(
         [](bool in_isr, Chassis* chassis, uint32_t event_id) {
           UNUSED(in_isr);
@@ -276,4 +281,5 @@ class Chassis : public LibXR::Application {
  private:
   ChassisType chassis_;
   LibXR::Event chassis_event_;
+  Referee* referee_;
 };
