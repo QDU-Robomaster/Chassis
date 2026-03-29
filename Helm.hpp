@@ -22,7 +22,6 @@ depends: []
 #include "Referee.hpp"
 #include "app_framework.hpp"
 #include "cycle_value.hpp"
-#include "dsp/fast_math_functions.h"
 #include "event.hpp"
 #include "libxr_def.hpp"
 #include "libxr_rw.hpp"
@@ -399,7 +398,7 @@ class Helm {
         target_omega_ = 0.0f;
         break;
       case (ChassisMode::INDEPENDENT):
-     /* 独立模式每个轮子的方向相同，wz当作轮子转向角速度 */
+        /* 独立模式每个轮子的方向相同，wz当作轮子转向角速度 */
         target_omega_ = -cmd_data_.z;
         break;
       case (ChassisMode::FOLLOW):

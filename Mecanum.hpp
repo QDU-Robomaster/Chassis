@@ -33,7 +33,7 @@ depends: []
 #define M3508_NM_TO_LSB_RATIO \
   52437.5f /* 3508转子扭矩转化为电机控制单位的比例 */
 
-#define MECANUM_MOTOR_MAX_OMEGA 52         /* 电机输出轴最大角速度 */
+#define MECANUM_MOTOR_MAX_OMEGA 52 /* 电机输出轴最大角速度 */
 
 template <typename ChassisType>
 class Chassis;
@@ -272,7 +272,7 @@ class Mecanum {
         break;
 
       case (ChassisMode::INDEPENDENT):
-        target_omega_ = - max_v * cmd_data_.z / PARAM.wheel_to_center;
+        target_omega_ = -max_v * cmd_data_.z / PARAM.wheel_to_center;
 
       case (ChassisMode::ROTOR):
         this->target_omega_ = static_cast<float>(max_v / PARAM.wheel_to_center);
@@ -411,7 +411,7 @@ class Mecanum {
 
     power_control_->SetMotorData3508(motor_data_.output_current_3508,
                                      motor_data_.rotorspeed_rpm_3508,
-                                    speed_error);
+                                     speed_error);
 
     float max_power =
         static_cast<float>(referee_chassis_pack_.rs.chassis_power_limit);

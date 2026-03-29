@@ -197,7 +197,6 @@ class Omni {
 
     cmd_->GetEvent().Register(CMD::CMD_EVENT_START_CTRL, start_ctrl_callback);
     cmd_->GetEvent().Register(CMD::CMD_EVENT_LOST_CTRL, lost_ctrl_callback);
-
   }
 
   /**
@@ -598,7 +597,7 @@ class Omni {
   static constexpr uint16_t UI_DEFAULT_WIDTH = 1;
   static constexpr uint16_t UI_CHAR_WIDTH = 2;
 
-    // 裁判系统客户端 ID 与机器人 ID 的映射关系。
+  // 裁判系统客户端 ID 与机器人 ID 的映射关系。
   static uint16_t GetClientID(uint16_t robot_id) {
     /* 蓝方 */
     if (robot_id > 100) {
@@ -608,7 +607,7 @@ class Omni {
     return static_cast<uint16_t>(robot_id + 0x0100);
   }
 
-    // 图元名固定为 3 字节，不足补空格，便于后续按名称 MODIFY。
+  // 图元名固定为 3 字节，不足补空格，便于后续按名称 MODIFY。
   static void SetFigureName(uint8_t (&dst)[3], const char* name) {
     dst[0] = ' ';
     dst[1] = ' ';
