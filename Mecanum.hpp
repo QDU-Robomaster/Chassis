@@ -9,6 +9,8 @@ required_hardware: []
 depends: []
 === END MANIFEST === */
 // clang-format on
+#include <algorithm>
+#include <cmath>
 #include <cstdint>
 #include <cstdlib>
 #include <cstring>
@@ -17,6 +19,7 @@ depends: []
 #include "Chassis.hpp"
 #include "PowerControl.hpp"
 #include "RMMotor.hpp"
+#include "Referee.hpp"
 #include "app_framework.hpp"
 #include "event.hpp"
 #include "libxr_def.hpp"
@@ -35,6 +38,8 @@ depends: []
 
 #define MECANUM_MOTOR_MAX_OMEGA 52 /* 电机输出轴最大角速度 */
 
+#define MECANUM_CHASSIS_MAX_POWER 60
+
 template <typename ChassisType>
 class Chassis;
 
@@ -50,6 +55,10 @@ class Mecanum {
     float gravity = 0.0f;
     float rotor_speed_scale =
         1.0f; /* 小陀螺转速缩放比例，降低可给平移留出更多功率 */
+    float rotor_omega_min_scale = 0.55f; /* 动态缩放下限 */
+    float rotor_buffer_low_j = 35.0f;    /* 缓冲能量低阈值 */
+    float rotor_buffer_high_j = 70.0f;   /* 缓冲能量高阈值 */
+    float rotor_scale_lpf_alpha = 0.2f;  /* 动态缩放低通系数 */
   };
 
   enum class ChassisMode : uint8_t {
@@ -91,7 +100,7 @@ class Mecanum {
       Motor* motor_wheel_0, Motor* motor_wheel_1, Motor* motor_wheel_2,
       Motor* motor_wheel_3, Motor* motor_steer_0, Motor* motor_steer_1,
       Motor* motor_steer_2, Motor* motor_steer_3, CMD* cmd,
-      PowerControl* power_control, uint32_t task_stack_depth,
+      PowerControl* power_control, Referee* referee, uint32_t task_stack_depth,
       ChassisParam chassis_param, LibXR::PID<float>::Param pid_follow,
       LibXR::PID<float>::Param pid_velocity_x,
       LibXR::PID<float>::Param pid_velocity_y,
@@ -133,7 +142,9 @@ class Mecanum {
             debug_core::command_thunk<Mecanum, &Mecanum::DebugCommand>, this))
 #endif
   {
+    UNUSED(hw);
     UNUSED(app);
+    UNUSED(referee);
     UNUSED(motor_steer_0);
     UNUSED(motor_steer_1);
     UNUSED(motor_steer_2);
@@ -192,9 +203,12 @@ class Mecanum {
     mecanum->mutex_.Lock();
 
     LibXR::Topic::ASyncSubscriber<CMD::ChassisCMD> cmd_suber("chassis_cmd");
+    LibXR::Topic::ASyncSubscriber<Referee::ChassisPack> referee_suber(
+        "chassis_ref");
     LibXR::Topic::ASyncSubscriber<float> yawmotor_angle_suber("yawmotor_angle");
 
     cmd_suber.StartWaiting();
+    referee_suber.StartWaiting();
     yawmotor_angle_suber.StartWaiting();
 
     mecanum->last_online_time_ = LibXR::Timebase::GetMicroseconds();
@@ -207,6 +221,13 @@ class Mecanum {
         mecanum->cmd_data_ = cmd_suber.GetData();
         cmd_suber.StartWaiting();
       }
+
+      if (referee_suber.Available()) {
+        mecanum->referee_chassis_pack_ = referee_suber.GetData();
+        mecanum->referee_last_rx_time_ = LibXR::Timebase::GetMilliseconds();
+        referee_suber.StartWaiting();
+      }
+
       if (yawmotor_angle_suber.Available()) {
         mecanum->current_yaw_ = LibXR::CycleValue<float>(
             yawmotor_angle_suber.GetData() - mecanum->yawmotor_zero_);
@@ -273,6 +294,7 @@ class Mecanum {
 
       case (ChassisMode::INDEPENDENT):
         target_omega_ = -max_v * cmd_data_.z / PARAM.wheel_to_center;
+        break;
 
       case (ChassisMode::ROTOR):
         this->target_omega_ = static_cast<float>(max_v / PARAM.wheel_to_center);
@@ -310,14 +332,19 @@ class Mecanum {
         break;
     }
 
-    /* 小陀螺模式下，根据平移输入动态调整旋转速度，给平移让出功率 */
+    /* 小陀螺模式下，根据平移输入与功率状态动态调整旋转速度。 */
+    float rotor_translation_scale = 1.0f;
     if (chassis_event_ == ChassisMode::ROTOR) {
       float translation_magnitude =
           sqrtf(target_vx_ * target_vx_ + target_vy_ * target_vy_);
-      if (translation_magnitude > 1e-3f) {
-        /* 有平移输入时，按比例缩小旋转速度 */
-        target_omega_ *= PARAM.rotor_speed_scale;
+      float translation_ratio = 0.0f;
+      if (max_v > 1e-3f) {
+        translation_ratio =
+            std::clamp(translation_magnitude / max_v, 0.0f, 1.0f);
       }
+      rotor_translation_scale =
+          1.0f - (1.0f - PARAM.rotor_speed_scale) * translation_ratio;
+      target_omega_ *= rotor_translation_scale * rotor_dynamic_scale_;
     }
   }
 
@@ -388,6 +415,7 @@ class Mecanum {
    * @brief 功率控制更新
    */
   void PowerControlUpdate() {
+    /* 采样当前反馈电流和转速，供功率模型参数估计使用。 */
     for (int i = 0; i < 4; i++) {
       motor_data_.rotorspeed_rpm_3508[i] = motor_feedback_[i].velocity;
       motor_data_.output_current_3508[i] =
@@ -413,28 +441,83 @@ class Mecanum {
                                      motor_data_.rotorspeed_rpm_3508,
                                      speed_error);
 
+    auto now_ms = LibXR::Timebase::GetMilliseconds();
+    bool referee_online = (now_ms - referee_last_rx_time_).ToSecondf() <= 1.0f;
+    bool power_control_online = power_control_->IsOnline();
+    bool boost_mode = (cmd_data_.self_define == CMD::ChasStat::BOOST);
+
+    /* 裁判系统离线或上限异常时，回退到本地默认功率上限。 */
     float max_power =
         static_cast<float>(referee_chassis_pack_.rs.chassis_power_limit);
-
-    auto now_ms = LibXR::Timebase::GetMilliseconds();
-    if ((now_ms - referee_last_rx_time_).ToSecondf() > 1.0f ||
-        max_power <= 1.0f) {
-      max_power = 60.0f;
+    if (!referee_online || max_power <= 1.0f) {
+      max_power = MECANUM_CHASSIS_MAX_POWER;
     }
 
-    if (power_control_->IsOnline() && cmd_data_.boost == true &&
-        power_control_->GetCapEnergy() > 0.8f) {
-      max_power += 100.0f;
-    } else if (power_control_->IsOnline() && cmd_data_.boost == true &&
-               power_control_->GetCapEnergy() > 0.5f) {
-      max_power += 60.0f;
-    } else if (power_control_->IsOnline() && cmd_data_.boost == true &&
-               power_control_->GetCapEnergy() > 0.25f) {
-      max_power += 40.0f;
+    /* BOOST 模式按电容能量分档提升可用功率上限。 */
+    if (power_control_online && boost_mode) {
+      float cap_energy = power_control_->GetCapEnergy();
+      if (cap_energy > 0.8f) {
+        max_power += 100.0f;
+      } else if (cap_energy > 0.5f) {
+        max_power += 60.0f;
+      } else if (cap_energy > 0.25f) {
+        max_power += 40.0f;
+      }
     }
 
     power_control_->OutputLimit(max_power);
     power_control_data_ = power_control_->GetPowerControlData();
+
+    /* 受限程度估计：限幅后电流总量 / 请求电流总量。 */
+    float req_current_abs_sum = 0.0f;
+    float lim_current_abs_sum = 0.0f;
+    for (int i = 0; i < 4; i++) {
+      float req_current_abs = fabsf(motor_data_.output_current_3508[i]);
+      float lim_current_abs =
+          power_control_data_.is_power_limited
+              ? fabsf(power_control_data_.new_output_current_3508[i])
+              : req_current_abs;
+      req_current_abs_sum += req_current_abs;
+      lim_current_abs_sum += lim_current_abs;
+    }
+
+    float power_limit_ratio = 1.0f;
+    if (req_current_abs_sum > 1e-3f) {
+      power_limit_ratio =
+          std::clamp(lim_current_abs_sum / req_current_abs_sum, 0.0f, 1.0f);
+    }
+
+    /* 将裁判缓冲能量映射为缩放因子；离线时保持 1.0。 */
+    float buffer_scale = 1.0f;
+    if (referee_online) {
+      float buffer_range =
+          std::max(PARAM.rotor_buffer_high_j - PARAM.rotor_buffer_low_j, 1.0f);
+      float referee_buffer_j =
+          static_cast<float>(referee_chassis_pack_.power_buffer);
+      float buffer_norm = std::clamp(
+          (referee_buffer_j - PARAM.rotor_buffer_low_j) / buffer_range, 0.0f,
+          1.0f);
+      buffer_scale = PARAM.rotor_omega_min_scale +
+                     (1.0f - PARAM.rotor_omega_min_scale) * buffer_norm;
+    }
+
+    /* 合成目标缩放并做一阶低通，抑制跳变。 */
+    float limit_scale =
+        power_control_data_.is_power_limited
+            ? std::clamp(power_limit_ratio, PARAM.rotor_omega_min_scale, 1.0f)
+            : 1.0f;
+    float target_dynamic_scale = std::clamp(buffer_scale * limit_scale,
+                                            PARAM.rotor_omega_min_scale, 1.0f);
+    float lpf_alpha = std::clamp(PARAM.rotor_scale_lpf_alpha, 0.0f, 1.0f);
+    rotor_dynamic_scale_ +=
+        (target_dynamic_scale - rotor_dynamic_scale_) * lpf_alpha;
+    rotor_dynamic_scale_ =
+        std::clamp(rotor_dynamic_scale_, PARAM.rotor_omega_min_scale, 1.0f);
+
+    /* 仅在小陀螺模式保留缩放，其他模式统一复位。 */
+    if (chassis_event_ != ChassisMode::ROTOR) {
+      rotor_dynamic_scale_ = 1.0f;
+    }
   }
 
   /**
@@ -509,6 +592,7 @@ class Mecanum {
   float target_vx_ = 0.0f;
   float target_vy_ = 0.0f;
   float target_omega_ = 0.0f;
+  float rotor_dynamic_scale_ = 1.0f; /* 功率相关动态缩放 */
 
   float current_yaw_ = 0.0f;
   float yawmotor_zero_ = 0.959505022f;
