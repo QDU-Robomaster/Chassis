@@ -10,6 +10,7 @@ depends: []
 === END MANIFEST === */
 // clang-format on
 
+#include <algorithm>
 #include <cmath>
 #include <cstdlib>
 #include <cstring>
@@ -38,6 +39,8 @@ depends: []
 #define GM6020_NM_TO_LSB_RATIO \
   7370.0f /* 6020转子扭矩转化为电机控制单位的比例 */
 
+#define HELM_CHASSIS_MAX_POWER 100
+
 template <typename ChassisType>
 class Chassis;
 class Helm {
@@ -50,6 +53,11 @@ class Helm {
     float wheel_resistance = 0.0f;
     float error_compensation = 0.0f;
     float gravity = 0.0f;
+    float rotor_speed_scale = 1.0f;      /* 平移输入下的小陀螺缩放 */
+    float rotor_omega_min_scale = 0.55f; /* 动态缩放下限 */
+    float rotor_buffer_low_j = 35.0f;    /* 缓冲能量低阈值 */
+    float rotor_buffer_high_j = 70.0f;   /* 缓冲能量高阈值 */
+    float rotor_scale_lpf_alpha = 0.2f;  /* 动态缩放低通系数 */
   };
   enum class ChassisMode : uint8_t {
     RELAX,
@@ -90,7 +98,7 @@ class Helm {
        Motor* motor_wheel_0, Motor* motor_wheel_1, Motor* motor_wheel_2,
        Motor* motor_wheel_3, Motor* motor_steer_0, Motor* motor_steer_1,
        Motor* motor_steer_2, Motor* motor_steer_3, CMD* cmd,
-       PowerControl* power_control, uint32_t task_stack_depth,
+       PowerControl* power_control, Referee* referee, uint32_t task_stack_depth,
        ChassisParam chassis_param, LibXR::PID<float>::Param pid_follow,
        LibXR::PID<float>::Param pid_velocity_x,
        LibXR::PID<float>::Param pid_velocity_y,
@@ -140,7 +148,9 @@ class Helm {
             debug_core::command_thunk<Helm, &Helm::DebugCommand>, this))
 #endif
   {
+    UNUSED(hw);
     UNUSED(app);
+    UNUSED(referee);
 
     for (int i = 0; i < 4; i++) {
       motor_wheel_cmd_[i].mode = Motor::ControlMode::MODE_TORQUE;
@@ -329,7 +339,6 @@ class Helm {
           motor_steer_feedback_[i].velocity * static_cast<float>(M_2PI) / 60.0f;
     }
 
-    /* 第二次设置: 指令电流 + 速度误差, 用于功率限制 */
     power_control_->SetMotorData3508(motor_data_.output_current_3508,
                                      motor_data_.rotorspeed_rpm_3508,
                                      speed_error_3508);
@@ -337,24 +346,26 @@ class Helm {
                                      motor_data_.rotorspeed_rpm_6020,
                                      speed_error_6020);
 
+    auto now_ms = LibXR::Timebase::GetMilliseconds();
+    bool referee_online = (now_ms - referee_last_rx_time_).ToSecondf() <= 1.0f;
+    bool power_control_online = power_control_->IsOnline();
+    bool boost_mode = (cmd_data_.self_define == CMD::ChasStat::BOOST);
+
     float max_power =
         static_cast<float>(referee_chassis_pack_.rs.chassis_power_limit);
-
-    auto now_ms = LibXR::Timebase::GetMilliseconds();
-    if ((now_ms - referee_last_rx_time_).ToSecondf() > 1.0f ||
-        max_power <= 1.0f) {
-      max_power = 60.0f;
+    if (!referee_online || max_power <= 1.0f) {
+      max_power = HELM_CHASSIS_MAX_POWER;
     }
 
-    if (power_control_->IsOnline() && cmd_data_.boost == true &&
-        power_control_->GetCapEnergy() > 0.8f) {
-      max_power += 100.0f;
-    } else if (power_control_->IsOnline() && cmd_data_.boost == true &&
-               power_control_->GetCapEnergy() > 0.5f) {
-      max_power += 70.0f;
-    } else if (power_control_->IsOnline() && cmd_data_.boost == true &&
-               power_control_->GetCapEnergy() > 0.25f) {
-      max_power += 40.0f;
+    if (power_control_online && boost_mode) {
+      float cap_energy = power_control_->GetCapEnergy();
+      if (cap_energy > 0.8f) {
+        max_power += 100.0f;
+      } else if (cap_energy > 0.5f) {
+        max_power += 70.0f;
+      } else if (cap_energy > 0.25f) {
+        max_power += 40.0f;
+      }
     }
 
     power_control_->OutputLimit(max_power);

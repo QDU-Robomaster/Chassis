@@ -15,7 +15,7 @@ constructor_args:
   - cmd: '@&cmd'
   - power_control: '@&power_control'
   - referee: '@&ref'
-  - task_stack_depth: 4096
+  - task_stack_depth: 1536
   - ChassisParam:
       wheel_radius: 0.065
       wheel_to_center: 0.26
@@ -24,6 +24,11 @@ constructor_args:
       wheel_resistance: 0.0
       error_compensation: 0.0
       gravity: 83.692
+      rotor_speed_scale: 0.95
+      rotor_omega_min_scale: 0.55
+      rotor_buffer_low_j: 35.0
+      rotor_buffer_high_j: 70.0
+      rotor_scale_lpf_alpha: 0.2
   - pid_follow_:
       k: 1.0
       p: 20.0
@@ -201,6 +206,10 @@ class Chassis : public LibXR::Application {
     float error_compensation = 0.0f;
     float gravity = 0.0f;
     float rotor_speed_scale = 1.0f;
+    float rotor_omega_min_scale = 0.55f;
+    float rotor_buffer_low_j = 35.0f;
+    float rotor_buffer_high_j = 70.0f;
+    float rotor_scale_lpf_alpha = 0.2f;
   };
 
   Chassis(
@@ -236,7 +245,11 @@ class Chassis : public LibXR::Application {
                 chassis_param.gravity_height, chassis_param.reduction_ratio,
                 chassis_param.wheel_resistance,
                 chassis_param.error_compensation, chassis_param.gravity,
-                chassis_param.rotor_speed_scale},
+                chassis_param.rotor_speed_scale,
+                chassis_param.rotor_omega_min_scale,
+                chassis_param.rotor_buffer_low_j,
+                chassis_param.rotor_buffer_high_j,
+                chassis_param.rotor_scale_lpf_alpha},
             pid_follow_, pid_velocity_x_, pid_velocity_y_, pid_omega_,
             pid_wheel_speed_0_, pid_wheel_speed_1_, pid_wheel_speed_2_,
             pid_wheel_speed_3_, pid_steer_angle_0_, pid_steer_angle_1_,
