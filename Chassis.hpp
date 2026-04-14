@@ -20,7 +20,7 @@ constructor_args:
       wheel_radius: 0.065
       wheel_to_center: 0.26
       gravity_height: 0.0
-      reductionratio: 15.7647
+      reduction_ratio: 15.7647
       wheel_resistance: 0.0
       error_compensation: 0.0
       gravity: 83.692
@@ -157,7 +157,7 @@ constructor_args:
       i_limit: 0.0
       out_limit: 0.0
       cycle: false
-- thread_priority: LibXR::Thread::Priority::HIGH
+  - thread_priority: LibXR::Thread::Priority::HIGH
 template_args:
   - ChassisType: Omni
 required_hardware:
