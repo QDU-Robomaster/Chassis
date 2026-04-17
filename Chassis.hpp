@@ -24,6 +24,8 @@ constructor_args:
       wheel_resistance: 0.0
       error_compensation: 0.0
       gravity: 83.692
+      length: 0.0
+      width: 0.0
       rotor_speed_scale: 0.95
       rotor_omega_min_scale: 0.55
       rotor_buffer_low_j: 35.0
@@ -205,6 +207,8 @@ class Chassis : public LibXR::Application {
     float wheel_resistance = 0.0f;
     float error_compensation = 0.0f;
     float gravity = 0.0f;
+    float length = 0.0f;
+    float width = 0.0f;
     float rotor_speed_scale = 1.0f;
     float rotor_omega_min_scale = 0.55f;
     float rotor_buffer_low_j = 35.0f;
@@ -245,6 +249,8 @@ class Chassis : public LibXR::Application {
                 chassis_param.gravity_height, chassis_param.reduction_ratio,
                 chassis_param.wheel_resistance,
                 chassis_param.error_compensation, chassis_param.gravity,
+                chassis_param.length,
+                chassis_param.width,
                 chassis_param.rotor_speed_scale,
                 chassis_param.rotor_omega_min_scale,
                 chassis_param.rotor_buffer_low_j,

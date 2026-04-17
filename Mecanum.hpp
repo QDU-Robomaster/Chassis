@@ -53,6 +53,8 @@ class Mecanum {
     float wheel_resistance = 0.0f;
     float error_compensation = 0.0f;
     float gravity = 0.0f;
+    float length = 0.0f;
+    float width = 0.0f;
     float rotor_speed_scale =
         1.0f; /* 小陀螺转速缩放比例，降低可给平移留出更多功率 */
     float rotor_omega_min_scale = 0.55f; /* 动态缩放下限 */
