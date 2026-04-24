@@ -57,8 +57,9 @@ class Omni {
     float wheel_resistance = 0.0f;
     float error_compensation = 0.0f;
     float gravity = 0.0f;
-    float rotor_speed_scale =
-        1.0f; /* 小陀螺转速缩放比例，降低可给平移留出更多功率 */
+    float length = 0.0f;
+    float width = 0.0f;
+    float rotor_speed_scale =1.0f; /* 小陀螺转速缩放比例，降低可给平移留出更多功率 */
     float rotor_omega_min_scale = 0.55f; /* 功率受限时小陀螺最小转速比例 */
     float rotor_buffer_low_j = 35.0f;    /* 缓冲能量低阈值，单位 J */
     float rotor_buffer_high_j = 70.0f;   /* 缓冲能量高阈值，单位 J */
@@ -220,11 +221,12 @@ class Omni {
     LibXR::Topic::ASyncSubscriber<LibXR::EulerAngle<float>> euler_suber(
         "ahrs_euler");
     LibXR::Topic::ASyncSubscriber<float> yawmotor_angle_suber("yawmotor_angle");
-
+    LibXR::Topic::ASyncSubscriber<float> pitchmotor_angle_suber("pitchmotor_angle");
     cmd_suber.StartWaiting();
     referee_suber.StartWaiting();
     euler_suber.StartWaiting();
     yawmotor_angle_suber.StartWaiting();
+    pitchmotor_angle_suber.StartWaiting();
     omni->last_online_time_ = LibXR::Timebase::GetMicroseconds();
     auto last_time = LibXR::Timebase::GetMilliseconds();
     omni->mutex_.Unlock();
@@ -244,14 +246,18 @@ class Omni {
       if (euler_suber.Available()) {
         omni->euler_ = euler_suber.GetData();
         euler_suber.StartWaiting();
-        omni->current_pitch_ = omni->euler_.Pitch();
-        omni->current_roll_ = omni->euler_.Roll();
-        omni->current_yaw_ = omni->euler_.Yaw();
+        omni->imu_pitch_ = -(omni->euler_.Pitch());
+        omni->imu_roll_ = -(omni->euler_.Roll());
+        omni->imu_yaw_ = omni->euler_.Yaw();
       }
 
       if (yawmotor_angle_suber.Available()) {
-        omni->chassis_yaw_ = yawmotor_angle_suber.GetData();
+        omni->yawmotor_angle_ = yawmotor_angle_suber.GetData();
         yawmotor_angle_suber.StartWaiting();
+      }
+      if (pitchmotor_angle_suber.Available()) {
+        omni->pitchmotor_angle_ = pitchmotor_angle_suber.GetData();
+        pitchmotor_angle_suber.StartWaiting();
       }
 
       omni->mutex_.Lock();
@@ -260,6 +266,7 @@ class Omni {
       omni->SelfResolution();
       omni->InverseKinematicsSolution();
       omni->DynamicInverseSolution();
+      omni->FeedForward();
       omni->CalculateMotorCurrent();
       omni->PowerControlUpdate();
       omni->mutex_.Unlock();
@@ -323,7 +330,7 @@ class Omni {
 
         /*正方向跟随云台*/
       case ChassisMode::FOLLOW:
-        target_omega_ = -pid_follow_.Calculate(0.0f, chassis_yaw_, dt_);
+        target_omega_ = -pid_follow_.Calculate(0.0f, yawmotor_angle_, dt_);
         break;
 
       default:
@@ -338,7 +345,7 @@ class Omni {
         break;
       case ChassisMode::ROTOR:
       case ChassisMode::FOLLOW: {
-        float beta = chassis_yaw_;
+        float beta = yawmotor_angle_;
         float cos_beta = cosf(beta);
         float sin_beta = sinf(beta);
         target_vx_ =
@@ -389,28 +396,117 @@ class Omni {
     }
   }
 
-  /**
-   * @brief 前馈
-   *
-   */
   void FeedForward() {
-    // TODO: 这里后期需要改成相对角度
-    float k = M_PI / 100;
+    // ===== Step0: wrap =====
+    auto WrapToPi = [](float a) {
+      while (a > M_PI) a -= 2.0f * M_PI;
+      while (a < -M_PI) a += 2.0f * M_PI;
+      return a;
+    };
 
-    gx_ff_ = PARAM.gravity *
-             SoftDeadzone(sin(current_pitch_) * cos(current_roll_), sin(k));
-    gy_ff_ = PARAM.gravity * SoftDeadzone(sin(current_roll_), sin(k));
+    float yaw_g = WrapToPi(imu_yaw_);
+    float pitch_g = WrapToPi(imu_pitch_);
+    float roll_g = WrapToPi(imu_roll_);
 
-    const float SQRT2_2 = 0.70710678118f;
-    baseff_[0] = (gx_ff_ - gy_ff_) * SQRT2_2 / 2;
-    baseff_[1] = (gx_ff_ + gy_ff_) * SQRT2_2 / 2;
-    baseff_[2] = (-gx_ff_ + gy_ff_) * SQRT2_2 / 2;
-    baseff_[3] = (-gx_ff_ - gy_ff_) * SQRT2_2 / 2;
+    float yaw_m = WrapToPi(yawmotor_angle_);
+    float pitch_m = WrapToPi(pitchmotor_angle_);
 
-    torque_ff_[0] = baseff_[0] * PARAM.wheel_radius;
-    torque_ff_[1] = baseff_[1] * PARAM.wheel_radius;
-    torque_ff_[2] = baseff_[2] * PARAM.wheel_radius;
-    torque_ff_[3] = baseff_[3] * PARAM.wheel_radius;
+    // ===== 三角函数 =====
+    float cy = cosf(yaw_g), sy = sinf(yaw_g);
+    float cp = cosf(pitch_g), sp = sinf(pitch_g);
+    float cr = cosf(roll_g), sr = sinf(roll_g);
+
+    float cy_m = cosf(yaw_m), sy_m = sinf(yaw_m);
+    float cp_m = cosf(pitch_m), sp_m = sinf(pitch_m);
+
+    // ===== R_wg = Rz * Ry * Rx =====
+    float R_wg[3][3];
+
+    R_wg[0][0] = cy * cp;
+    R_wg[0][1] = cy * sp * sr - sy * cr;
+    R_wg[0][2] = cy * sp * cr + sy * sr;
+
+    R_wg[1][0] = sy * cp;
+    R_wg[1][1] = sy * sp * sr + cy * cr;
+    R_wg[1][2] = sy * sp * cr - cy * sr;
+
+    R_wg[2][0] = -sp;
+    R_wg[2][1] = cp * sr;
+    R_wg[2][2] = cp * cr;
+
+    // ===== R_cg = Rz * Ry =====
+    float R_cg[3][3];
+
+    R_cg[0][0] = cy_m * cp_m;
+    R_cg[0][1] = -sy_m;
+    R_cg[0][2] = cy_m * sp_m;
+
+    R_cg[1][0] = sy_m * cp_m;
+    R_cg[1][1] = cy_m;
+    R_cg[1][2] = sy_m * sp_m;
+
+    R_cg[2][0] = -sp_m;
+    R_cg[2][1] = 0.0f;
+    R_cg[2][2] = cp_m;
+
+    // ===== R_gc = 转置 =====
+    float R_gc[3][3];
+    for (int i = 0; i < 3; i++) {
+      for (int j = 0; j < 3; j++) {
+        R_gc[i][j] = R_cg[j][i];
+      }
+    }
+
+    // ===== R_wc = R_wg * R_gc =====
+    float R_wc[3][3] = {{0}};
+
+    for (int i = 0; i < 3; i++) {
+      for (int j = 0; j < 3; j++) {
+        R_wc[i][j] = R_wg[i][0] * R_gc[0][j] + R_wg[i][1] * R_gc[1][j] +
+                     R_wg[i][2] * R_gc[2][j];
+      }
+    }
+
+    // ===== 提取底盘姿态 =====
+    float val = -R_wc[2][0];
+    if (val > 1.0f) val = 1.0f;
+    if (val < -1.0f) val = -1.0f;
+
+    chassis_pitch_ = asinf(val);
+    chassis_roll_ = atan2f(R_wc[2][1], R_wc[2][2]);
+
+    chassis_pitch_ = WrapToPi(chassis_pitch_);
+    chassis_roll_ = WrapToPi(chassis_roll_);
+
+    float k = M_PI / 50;
+    gy_ff_ = -PARAM.gravity * SoftDeadzone(sinf(chassis_pitch_), sinf(k));
+    gx_ff_ = -PARAM.gravity * SoftDeadzone(sinf(chassis_roll_), sinf(k));
+
+    py = -PARAM.gravity_height * SoftDeadzone(sinf(chassis_pitch_), sin(k));
+    px = -PARAM.gravity_height * SoftDeadzone(sinf(chassis_roll_), sin(k));
+
+    for (int i = 0; i < 4; i++) {
+      float dx = post_x_[i] - px;
+      float dy = post_y_[i] - py;
+      length_[i] = sqrtf(dx * dx + dy * dy);
+    }
+
+    const float SQRT2 = 0.70710678118f * 2;
+    baseff_[0] = (gx_ff_ + gy_ff_) * SQRT2;
+    baseff_[1] = (-gx_ff_ + gy_ff_) * SQRT2;
+    baseff_[2] = (-gx_ff_ - gy_ff_) * SQRT2;
+    baseff_[3] = (gx_ff_ - gy_ff_) * SQRT2;
+
+    for (int i = 0; i < 4; i++) {
+      baseff_l_[i] = 1.0f / length_[i];
+      torque_n_[i] = baseff_l_[i] / (baseff_l_[0] + baseff_l_[1] +
+                                     baseff_l_[2] + baseff_l_[3]);
+      baseff_[i] = baseff_[i] * torque_n_[i];
+    }
+
+    for (int i = 0; i < 4; i++) {
+      torque_ff_[i] = baseff_[i] * PARAM.wheel_radius;
+    }
   }
 
   /**
@@ -477,7 +573,7 @@ class Omni {
       /*计算输出*/
       for (int i = 0; i < 4; i++) {
         output_[i] = target_motor_force_[i] * PARAM.wheel_radius +
-                     target_motor_current_[i];
+                     target_motor_current_[i]+torque_ff_[i];
       }
     }
   }
@@ -834,15 +930,34 @@ class Omni {
   float target_omega_ = 0.0f;
   float rotor_dynamic_scale_ = 1.0f; /* 功率相关动态缩放 */
 
-  float current_yaw_ = 0.0f;
-  float current_roll_ = 0.0f;
-  float current_pitch_ = 0.0f;
   float chassis_yaw_ = 0.0f;
+  float dt_ = 0;
+
+  float imu_yaw_ = 0.0f;
+  float imu_roll_ = 0.0f;
+  float imu_pitch_ = 0.0f;
+  float yawmotor_angle_ = 0.0f;
+  float pitchmotor_angle_ = 0.0f;
+
+  float chassis_roll_ = 0.0f;
+  float chassis_pitch_ = 0.0f;
+
   float torque_ff_[4]{0.0, 0.0, 0.0, 0.0};
   float baseff_[4]{0.0, 0.0, 0.0, 0.0};
   float gx_ff_;
   float gy_ff_;
-  float dt_ = 0;
+
+
+  float length_[4]{0.0f, 0.0f, 0.0f, 0.0f};
+  float torque_n_[4]{0.0f, 0.0f, 0.0f, 0.0f};
+  float baseff_l_[4]{0.0f, 0.0f, 0.0f, 0.0f};
+  float px = 0.0f;
+  float py = 0.0f;
+  float post_x_[4] = {-PARAM.width / 2, -PARAM.width / 2, PARAM.width / 2,
+                      PARAM.width / 2};
+  float post_y_[4] = {PARAM.length / 2, -PARAM.length / 2, -PARAM.length / 2,
+                      PARAM.length / 2};
+
   LibXR::MicrosecondTimestamp last_online_time_ = 0;
 
   Motor* motor_wheel_0_;

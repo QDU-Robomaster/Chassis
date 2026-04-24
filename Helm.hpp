@@ -53,6 +53,8 @@ class Helm {
     float wheel_resistance = 0.0f;
     float error_compensation = 0.0f;
     float gravity = 0.0f;
+    float length = 0.0f;
+    float width = 0.0f;
     float rotor_speed_scale = 1.0f;      /* 平移输入下的小陀螺缩放 */
     float rotor_omega_min_scale = 0.55f; /* 动态缩放下限 */
     float rotor_buffer_low_j = 35.0f;    /* 缓冲能量低阈值 */
