@@ -335,8 +335,8 @@ class Helm {
     float speed_error_6020[4];
     for (int i = 0; i < 4; i++) {
       speed_error_6020[i] =
-          steer_angle_[i] -
-          motor_steer_feedback_[i].velocity * static_cast<float>(M_2PI) / 60.0f;
+          steer_angle_[i] - motor_steer_feedback_[i].velocity *
+                                static_cast<float>(LibXR::TWO_PI) / 60.0f;
     }
 
     power_control_->SetMotorData3508(motor_data_.output_current_3508,
@@ -484,22 +484,22 @@ class Helm {
             LibXR::CycleValue<float>(target_angle_[i] +
                                      static_cast<float>(M_PI) + zero_[i]),
             motor_steer_feedback_[i].abs_angle, dt_);
-        steer_out_[i] =
-            pid_steer_speed_[i].Calculate(steer_angle_[i],
-                                          motor_steer_feedback_[i].velocity *
-                                              static_cast<float>(M_2PI) / 60.0f,
-                                          dt_);
+        steer_out_[i] = pid_steer_speed_[i].Calculate(
+            steer_angle_[i],
+            motor_steer_feedback_[i].velocity *
+                static_cast<float>(LibXR::TWO_PI) / 60.0f,
+            dt_);
       } else {
         wheel_out_[i] = pid_wheel_speed_[i].Calculate(
             target_speed_[i], motor_wheel_feedback_[i].velocity, dt_);
         steer_angle_[i] = pid_steer_angle_[i].Calculate(
             target_angle_[i] + zero_[i], motor_steer_feedback_[i].abs_angle,
             dt_);
-        steer_out_[i] =
-            pid_steer_speed_[i].Calculate(steer_angle_[i],
-                                          motor_steer_feedback_[i].velocity *
-                                              static_cast<float>(M_2PI) / 60.0f,
-                                          dt_);
+        steer_out_[i] = pid_steer_speed_[i].Calculate(
+            steer_angle_[i],
+            motor_steer_feedback_[i].velocity *
+                static_cast<float>(LibXR::TWO_PI) / 60.0f,
+            dt_);
       }
     }
   }

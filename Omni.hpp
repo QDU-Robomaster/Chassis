@@ -742,9 +742,9 @@ class Omni {
       ui_del.delete_type =
           static_cast<uint8_t>(Referee::UIDeleteType::UI_DELETE_LAYER);
       ui_del.layer = UI_LAYER_CHASSIS;
-      const ErrorCode EC =
+      const LibXR::ErrorCode EC =
           omni->referee_->SendUILayerDelete(id, client, ui_del);
-      if (EC != ErrorCode::OK) {
+      if (EC != LibXR::ErrorCode::OK) {
         return;
       }
 
@@ -789,7 +789,7 @@ class Omni {
                       Referee::UIColor::UI_COLOR_CYAN, 20, UI_CHAR_WIDTH, 160,
                       580, mode_str);
         if (omni->referee_->SendUICharacter(id, client, char_fig) ==
-            ErrorCode::OK) {
+            LibXR::ErrorCode::OK) {
           omni->ui_initialized_ = true;
         }
         break;
@@ -807,7 +807,8 @@ class Omni {
         FillCircle(fig, "CS", OP, UI_LAYER_CHASSIS,
                    Referee::UIColor::UI_COLOR_CYAN, UI_DEFAULT_WIDTH * 7, DOT_X,
                    DOT_Y, UI_ORBIT_DOT_RADIUS);
-        if (omni->referee_->SendUIFigure(id, client, fig) == ErrorCode::OK) {
+        if (omni->referee_->SendUIFigure(id, client, fig) ==
+            LibXR::ErrorCode::OK) {
           omni->ui_dot_initialized_ = true;
         }
         break;
