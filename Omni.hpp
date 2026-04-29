@@ -33,10 +33,6 @@ depends: []
 #include "timebase.hpp"
 #include "timer.hpp"
 
-#ifdef DEBUG
-#include "DebugCore.hpp"
-#endif
-
 #define M3508_NM_TO_LSB_RATIO \
   52437.5f /* 3508转子扭矩转化为电机控制单位的比例 */
 
@@ -142,14 +138,7 @@ class Omni {
                          pid_steer_speed_2, pid_steer_speed_3},
         cmd_(cmd),
         power_control_(power_control),
-        referee_(referee)
-#ifdef DEBUG
-        ,
-        cmd_file_(LibXR::RamFS::CreateFile(
-            "omni_chassis",
-            debug_core::command_thunk<Omni, &Omni::DebugCommand>, this))
-#endif
-  {
+        referee_(referee) {
     UNUSED(hw);
     UNUSED(app);
     UNUSED(motor_steer_0);
@@ -182,10 +171,6 @@ class Omni {
       LibXR::Timer::Add(timer_static_);
       LibXR::Timer::Start(timer_static_);
     }
-#ifdef DEBUG
-    hw.template FindOrExit<LibXR::RamFS>({"ramfs"})->Add(cmd_file_);
-#endif
-
     auto start_ctrl_callback = LibXR::Callback<uint32_t>::Create(
         [](bool in_isr, Omni* omni, uint32_t event_id) {
           UNUSED(in_isr);
@@ -643,9 +628,6 @@ class Omni {
       motor_wheel_[i]->Relax();
     }
   }
-#ifdef DEBUG
-  int DebugCommand(int argc, char** argv);
-#endif
 
  private:
   // UI 参数约定：
@@ -899,14 +881,4 @@ class Omni {
   bool ui_layer_cleared_ = false;
   uint32_t ui_tick_ = 0;
   LibXR::Timer::TimerHandle timer_static_;
-
-#ifdef DEBUG
-  LibXR::RamFS::File cmd_file_;
-#endif
 };
-
-#ifdef DEBUG
-#define OMNI_CHASSIS_DEBUG_IMPL
-#include "OmniDebug.inl"
-#undef OMNI_CHASSIS_DEBUG_IMPL
-#endif

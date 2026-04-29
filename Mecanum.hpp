@@ -29,10 +29,6 @@ depends: []
 #include "thread.hpp"
 #include "timebase.hpp"
 
-#ifdef DEBUG
-#include "DebugCore.hpp"
-#endif
-
 #define M3508_NM_TO_LSB_RATIO \
   52437.5f /* 3508转子扭矩转化为电机控制单位的比例 */
 
@@ -134,14 +130,7 @@ class Mecanum {
         pid_steer_speed_{pid_steer_speed_0, pid_steer_speed_1,
                          pid_steer_speed_2, pid_steer_speed_3},
         cmd_(cmd),
-        power_control_(power_control)
-#ifdef DEBUG
-        ,
-        cmd_file_(LibXR::RamFS::CreateFile(
-            "mecanum_chassis",
-            debug_core::command_thunk<Mecanum, &Mecanum::DebugCommand>, this))
-#endif
-  {
+        power_control_(power_control) {
     UNUSED(hw);
     UNUSED(app);
     UNUSED(referee);
@@ -170,10 +159,6 @@ class Mecanum {
 
     thread_.Create(this, ThreadFunction, "MecanumChassisThread",
                    task_stack_depth, thread_priority);
-#ifdef DEBUG
-    hw.template FindOrExit<LibXR::RamFS>({"ramfs"})->Add(cmd_file_);
-#endif
-
     auto start_ctrl_callback = LibXR::Callback<uint32_t>::Create(
         [](bool in_isr, Mecanum* mecanum, uint32_t event_id) {
           UNUSED(in_isr);
@@ -572,9 +557,6 @@ class Mecanum {
       motor_wheel_[i]->Relax();
     }
   }
-#ifdef DEBUG
-  int DebugCommand(int argc, char** argv);
-#endif
 
  private:
   const ChassisParam PARAM;
@@ -646,14 +628,4 @@ class Mecanum {
   LibXR::Mutex mutex_;
 
   ChassisMode chassis_event_ = ChassisMode::RELAX;
-
-#ifdef DEBUG
-  LibXR::RamFS::File cmd_file_;
-#endif
 };
-
-#ifdef DEBUG
-#define MECANUM_CHASSIS_DEBUG_IMPL
-#include "MecanumDebug.inl"
-#undef MECANUM_CHASSIS_DEBUG_IMPL
-#endif
