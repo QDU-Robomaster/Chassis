@@ -49,7 +49,7 @@ inline int Mecanum::DebugCommand(int argc, char** argv) {
                 text = "FOLLOW";
                 break;
             }
-            LibXR::STDIO::Printf("  %s=%s\r\n", field_name, text);
+            LibXR::STDIO::Printf<"  %s=%s\r\n">(field_name, text);
           }),
       DEBUG_CORE_LIVE_CUSTOM(
           Mecanum, "ctrl_mode", mask_state,
@@ -66,7 +66,7 @@ inline int Mecanum::DebugCommand(int argc, char** argv) {
                   break;
               }
             }
-            LibXR::STDIO::Printf("  %s=%s\r\n", field_name, text);
+            LibXR::STDIO::Printf<"  %s=%s\r\n">(field_name, text);
           }),
       DEBUG_CORE_LIVE_BOOL(Mecanum, "cmd_online", mask_state,
                            self->cmd_ != nullptr && self->cmd_->Online()),
@@ -85,14 +85,13 @@ inline int Mecanum::DebugCommand(int argc, char** argv) {
       DEBUG_CORE_LIVE_CUSTOM(
           Mecanum, "wheel_motion", mask_motion,
           +[](const char* field_name, const Mecanum* self) {
-            LibXR::STDIO::Printf("  %s:\r\n", field_name);
+            LibXR::STDIO::Printf<"  %s:\r\n">(field_name);
             for (int i = 0; i < 4; ++i) {
               float now_omega =
                   self->motor_feedback_[i].omega / self->PARAM.reduction_ratio;
               float omega_err = self->target_motor_omega_[i] - now_omega;
-              LibXR::STDIO::Printf(
-                  "    m%d: omega_t=%.3f omega_n=%.3f err=%.3f i_pid=%.3f "
-                  "f_dyn=%.3f out=%.3f\r\n",
+              LibXR::STDIO::Printf<"    m%d: omega_t=%.3f omega_n=%.3f err=%.3f i_pid=%.3f "
+                  "f_dyn=%.3f out=%.3f\r\n">(
                   i, self->target_motor_omega_[i], now_omega, omega_err,
                   self->target_motor_current_[i], self->target_motor_force_[i],
                   self->output_[i]);
@@ -103,16 +102,15 @@ inline int Mecanum::DebugCommand(int argc, char** argv) {
       DEBUG_CORE_LIVE_CUSTOM(
           Mecanum, "power_current", mask_power,
           +[](const char* field_name, const Mecanum* self) {
-            LibXR::STDIO::Printf("  %s:\r\n", field_name);
+            LibXR::STDIO::Printf<"  %s:\r\n">(field_name);
             for (int i = 0; i < 4; ++i) {
               float req_i = self->motor_data_.output_current_3508[i];
               float lim_i =
                   self->power_control_data_.is_power_limited
                       ? self->power_control_data_.new_output_current_3508[i]
                       : req_i;
-              LibXR::STDIO::Printf(
-                  "    m%d: req_i=%.1f lim_i=%.1f cmd_tq=%.3f "
-                  "out_clamped=%d\r\n",
+              LibXR::STDIO::Printf<"    m%d: req_i=%.1f lim_i=%.1f cmd_tq=%.3f "
+                  "out_clamped=%d\r\n">(
                   i, req_i, lim_i, self->motor_cmd_[i].torque,
                   fabsf(self->output_[i]) >= 6.0f ? 1 : 0);
             }
@@ -120,12 +118,11 @@ inline int Mecanum::DebugCommand(int argc, char** argv) {
       DEBUG_CORE_LIVE_CUSTOM(
           Mecanum, "wheel_feedback", mask_wheel,
           +[](const char* field_name, const Mecanum* self) {
-            LibXR::STDIO::Printf("  %s:\r\n", field_name);
+            LibXR::STDIO::Printf<"  %s:\r\n">(field_name);
             for (int i = 0; i < 4; ++i) {
               const auto& fb = self->motor_feedback_[i];
-              LibXR::STDIO::Printf(
-                  "    m%d: state=%u abs=%.3f rpm=%.0f omega=%.3f torque=%.3f "
-                  "temp=%.0f\r\n",
+              LibXR::STDIO::Printf<"    m%d: state=%u abs=%.3f rpm=%.0f omega=%.3f torque=%.3f "
+                  "temp=%.0f\r\n">(
                   i, static_cast<unsigned>(fb.state),
                   static_cast<float>(fb.abs_angle), fb.velocity, fb.omega,
                   fb.torque, fb.temp);

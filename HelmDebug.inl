@@ -49,7 +49,7 @@ inline int Helm::DebugCommand(int argc, char** argv) {
                 text = "FOLLOW";
                 break;
             }
-            LibXR::STDIO::Printf("  %s=%s\r\n", field_name, text);
+            LibXR::STDIO::Printf<"  %s=%s\r\n">(field_name, text);
           }),
       DEBUG_CORE_LIVE_CUSTOM(
           Helm, "ctrl_mode", mask_state,
@@ -66,7 +66,7 @@ inline int Helm::DebugCommand(int argc, char** argv) {
                   break;
               }
             }
-            LibXR::STDIO::Printf("  %s=%s\r\n", field_name, text);
+            LibXR::STDIO::Printf<"  %s=%s\r\n">(field_name, text);
           }),
       DEBUG_CORE_LIVE_BOOL(Helm, "cmd_online", mask_state,
                            self->cmd_ != nullptr && self->cmd_->Online()),
@@ -82,13 +82,12 @@ inline int Helm::DebugCommand(int argc, char** argv) {
       DEBUG_CORE_LIVE_CUSTOM(
           Helm, "module_motion", mask_motion,
           +[](const char* field_name, const Helm* self) {
-            LibXR::STDIO::Printf("  %s:\r\n", field_name);
+            LibXR::STDIO::Printf<"  %s:\r\n">(field_name);
             for (int i = 0; i < 4; ++i) {
               float speed_err = self->target_speed_[i] -
                                 self->motor_wheel_feedback_[i].velocity;
-              LibXR::STDIO::Printf(
-                  "    m%d: speed_t=%.2f speed_n=%.2f err=%.2f ang_t=%.3f "
-                  "ang_n=%.3f rev=%d wheel_out=%.1f steer_out=%.1f\r\n",
+              LibXR::STDIO::Printf<"    m%d: speed_t=%.2f speed_n=%.2f err=%.2f ang_t=%.3f "
+                  "ang_n=%.3f rev=%d wheel_out=%.1f steer_out=%.1f\r\n">(
                   i, self->target_speed_[i],
                   self->motor_wheel_feedback_[i].velocity, speed_err,
                   static_cast<float>(self->target_angle_[i]),
@@ -102,7 +101,7 @@ inline int Helm::DebugCommand(int argc, char** argv) {
       DEBUG_CORE_LIVE_CUSTOM(
           Helm, "power_current", mask_power,
           +[](const char* field_name, const Helm* self) {
-            LibXR::STDIO::Printf("  %s:\r\n", field_name);
+            LibXR::STDIO::Printf<"  %s:\r\n">(field_name);
             for (int i = 0; i < 4; ++i) {
               float req_3508 = self->motor_data_.output_current_3508[i];
               float req_6020 = self->motor_data_.output_current_6020[i];
@@ -114,9 +113,8 @@ inline int Helm::DebugCommand(int argc, char** argv) {
                   self->power_control_data_.is_power_limited
                       ? self->power_control_data_.new_output_current_6020[i]
                       : req_6020;
-              LibXR::STDIO::Printf(
-                  "    m%d: 3508(req/lim)=%.1f/%.1f 6020(req/lim)=%.1f/%.1f "
-                  "wheel_cmd=%.1f steer_cmd=%.1f\r\n",
+              LibXR::STDIO::Printf<"    m%d: 3508(req/lim)=%.1f/%.1f 6020(req/lim)=%.1f/%.1f "
+                  "wheel_cmd=%.1f steer_cmd=%.1f\r\n">(
                   i, req_3508, lim_3508, req_6020, lim_6020,
                   self->motor_wheel_cmd_[i].velocity,
                   self->motor_steer_cmd_[i].velocity);
@@ -125,19 +123,17 @@ inline int Helm::DebugCommand(int argc, char** argv) {
       DEBUG_CORE_LIVE_CUSTOM(
           Helm, "module_feedback", mask_wheel,
           +[](const char* field_name, const Helm* self) {
-            LibXR::STDIO::Printf("  %s:\r\n", field_name);
+            LibXR::STDIO::Printf<"  %s:\r\n">(field_name);
             for (int i = 0; i < 4; ++i) {
               const auto& wheel = self->motor_wheel_feedback_[i];
               const auto& steer = self->motor_steer_feedback_[i];
-              LibXR::STDIO::Printf(
-                  "    m%d wheel: state=%u abs=%.3f rpm=%.0f omega=%.3f "
-                  "torque=%.3f temp=%.0f\r\n",
+              LibXR::STDIO::Printf<"    m%d wheel: state=%u abs=%.3f rpm=%.0f omega=%.3f "
+                  "torque=%.3f temp=%.0f\r\n">(
                   i, static_cast<unsigned>(wheel.state),
                   static_cast<float>(wheel.abs_angle), wheel.velocity,
                   wheel.omega, wheel.torque, wheel.temp);
-              LibXR::STDIO::Printf(
-                  "    m%d steer: state=%u abs=%.3f rpm=%.0f omega=%.3f "
-                  "torque=%.3f temp=%.0f\r\n",
+              LibXR::STDIO::Printf<"    m%d steer: state=%u abs=%.3f rpm=%.0f omega=%.3f "
+                  "torque=%.3f temp=%.0f\r\n">(
                   i, static_cast<unsigned>(steer.state),
                   static_cast<float>(steer.abs_angle), steer.velocity,
                   steer.omega, steer.torque, steer.temp);
