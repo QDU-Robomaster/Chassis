@@ -30,10 +30,6 @@ depends: []
 #include "pid.hpp"
 #include "timebase.hpp"
 
-#ifdef DEBUG
-#include "DebugCore.hpp"
-#endif
-
 #define M3508_NM_TO_LSB_RATIO \
   52437.5f /* 3508转子扭矩转化为电机控制单位的比例 */
 #define GM6020_NM_TO_LSB_RATIO \
@@ -140,14 +136,7 @@ class Helm {
         pid_steer_speed_{pid_steer_speed_0, pid_steer_speed_1,
                          pid_steer_speed_2, pid_steer_speed_3},
         cmd_(cmd),
-        power_control_(power_control)
-#ifdef DEBUG
-        ,
-        cmd_file_(LibXR::RamFS::CreateFile(
-            "helm_chassis",
-            debug_core::command_thunk<Helm, &Helm::DebugCommand>, this))
-#endif
-  {
+        power_control_(power_control) {
     UNUSED(hw);
     UNUSED(app);
     UNUSED(referee);
@@ -173,9 +162,6 @@ class Helm {
 
     thread_.Create(this, ThreadFunction, "HelmChassisThread", task_stack_depth,
                    thread_priority);
-#ifdef DEBUG
-    hw.template FindOrExit<LibXR::RamFS>({"ramfs"})->Add(cmd_file_);
-#endif
     auto lost_ctrl_callback = LibXR::Callback<uint32_t>::Create(
         [](bool in_isr, Helm* helm, uint32_t event_id) {
           UNUSED(in_isr);
@@ -536,10 +522,6 @@ class Helm {
     }
   }
 
-#ifdef DEBUG
-  int DebugCommand(int argc, char** argv);
-#endif
-
  private:
   const ChassisParam PARAM;
 
@@ -625,14 +607,4 @@ class Helm {
 
   LibXR::Topic topic_delta_yaw_ = LibXR::Topic::CreateTopic<float>("delta_yaw");
   ChassisMode chassis_event_ = ChassisMode::RELAX;
-
-#ifdef DEBUG
-  LibXR::RamFS::File cmd_file_;
-#endif
 };
-
-#ifdef DEBUG
-#define HELM_CHASSIS_DEBUG_IMPL
-#include "HelmDebug.inl"
-#undef HELM_CHASSIS_DEBUG_IMPL
-#endif
