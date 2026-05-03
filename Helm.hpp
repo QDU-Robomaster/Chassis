@@ -217,7 +217,7 @@ class Helm {
       helm->UpdateCMD();
       helm->topic_delta_yaw_.Publish(helm->delta_yaw_);
       helm->Helmcontrol();
-      helm->PowerControlUpdate();
+      // helm->PowerControlUpdate();
       helm->mutex_.Unlock();
       helm->Output();
       helm->thread_.SleepUntil(last_time, 2);
@@ -530,9 +530,8 @@ class Helm {
   float target_omega_ = 0.0f;
 
   bool motor_reverse_[4]{false, false, false, false};
-  LibXR::CycleValue<float> zero_[4] = {1.11367011, 3.1254859, 0.479369015,
-                                       3.55500054};
-
+  LibXR::CycleValue<float> zero_[4] = {1.10063124, 2.05323339, 3.2244277,
+                                       0.979446769};
   float current_yaw_ = 0.0f;
   float delta_yaw_ = 0.0f;
 
@@ -545,7 +544,7 @@ class Helm {
   float steer_out_[4] = {0.0f, 0.0f, 0.0f, 0.0f};
   float steer_angle_[4] = {0.0, 0.0, 0.0, 0.0};
 
-  float motor_max_speed_ = 9000.0;
+  float motor_max_speed_ = 4000.0;
 
   LibXR::CycleValue<float> main_direct_ = 0.0f;
 
