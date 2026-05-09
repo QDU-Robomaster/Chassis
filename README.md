@@ -15,6 +15,12 @@
 2. 绑定轮电机、舵向电机、CMD、PowerControl。
 3. 先验证 RELAX/FOLLOW/ROTOR 等模式切换，再联调整车。
 
+底盘内部订阅的公共 topic：
+- `chassis_cmd`：CMD 发布的底盘控制命令。
+- `chassis_ref`：裁判系统底盘功率数据。
+- `gimbal_euler`：云台 IMU 融合姿态，Omni 底盘用于跟随云台 yaw。
+- `yawmotor_angle`：云台 yaw 电机角度反馈。
+
 标准命令流程：
     xrobot_add_mod Chassis --instance-id chassis
     xrobot_gen_main
