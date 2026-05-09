@@ -426,7 +426,7 @@ class Helm {
           x = -sinf(wheel_pos) * target_omega_ * SQRT2 + target_vx_;
           y = -cosf(wheel_pos) * target_omega_ * SQRT2 + target_vy_;
 
-          if (fabsf(x) < 1e-4f && fabsf(y) < 1e-4f) {
+          if (fabsf(x) < 0.05f && fabsf(y) < 0.05f) {
             target_angle_[i] = wheel_pos;
             target_speed_[i] = 0.0f;
           } else {
