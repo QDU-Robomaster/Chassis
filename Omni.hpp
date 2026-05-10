@@ -507,11 +507,11 @@ class Omni {
     if (power_control_online && boost_mode) {
       float cap_energy = power_control_->GetCapEnergy();
       if (cap_energy > 0.8f) {
-        max_power += 100.0f;
+        max_power += 300.0f;
       } else if (cap_energy > 0.5f) {
-        max_power += 60.0f;
+        max_power += 200.0f;
       } else if (cap_energy > 0.25f) {
-        max_power += 40.0f;
+        max_power += 100.0f;
       }
     }
 
@@ -661,6 +661,10 @@ class Omni {
   static constexpr uint32_t UI_GUIDE_RESEND_OFFSET = 1;
   static constexpr uint32_t UI_MODE_TEXT_TICK = 3;
   static constexpr uint32_t UI_TEXT_READD_DIV = 10;
+  static constexpr uint32_t UI_CAP_FILL_REFRESH_DIV = 5;
+  static constexpr uint32_t UI_CAP_FILL_REFRESH_OFFSET = 2;
+  // 电容条低频重建周期 客户端丢图后靠 ADD 补回来
+  static constexpr uint32_t UI_CAP_FILL_READD_DIV = 50;
 
   static void ResetModeUILocked(Omni* omni) {
     omni->ui_text_initialized_ = false;
@@ -753,9 +757,11 @@ class Omni {
       return;
     }
 
-    if ((UI_TICK % UI_BOX_RESEND_DIV) == 2) {
+    if ((UI_TICK % UI_CAP_FILL_REFRESH_DIV) == UI_CAP_FILL_REFRESH_OFFSET) {
       Referee::UIFigure cap_fill_fig{};
-      // 单独更新电容框内部的能量填充条。
+      const bool REBUILD_CAP_FILL =
+          !UI_CAP_FILL_INITIALIZED || (UI_TICK % UI_CAP_FILL_READD_DIV) == 2;
+      // 单独更新电容框内部的能量填充条
       const uint16_t INNER_X1 = UI_CAP_BOX_X1 + UI_CAP_FILL_MARGIN;
       const uint16_t INNER_Y1 = UI_CAP_BOX_Y1 + UI_CAP_FILL_MARGIN;
       const uint16_t INNER_Y2 = UI_CAP_BOX_Y2 - UI_CAP_FILL_MARGIN;
@@ -772,8 +778,8 @@ class Omni {
       }
       omni->referee_->FillRect(
           cap_fill_fig, "CPI",
-          UI_CAP_FILL_INITIALIZED ? Referee::UIFigureOp::UI_OP_MODIFY
-                                  : Referee::UIFigureOp::UI_OP_ADD,
+          REBUILD_CAP_FILL ? Referee::UIFigureOp::UI_OP_ADD
+                           : Referee::UIFigureOp::UI_OP_MODIFY,
           UI_LAYER_CHASSIS,
           CAP_ONLINE ? Referee::UIColor::UI_COLOR_WHITE
                      : Referee::UIColor::UI_COLOR_BLACK,
