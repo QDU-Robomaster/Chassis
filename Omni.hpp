@@ -14,21 +14,15 @@ depends: []
 #include <cmath>
 #include <cstdint>
 #include <cstdio>
-#include <cstring>
 
 #include "CMD.hpp"
-#include "Chassis.hpp"
 #include "Motor.hpp"
 #include "PowerControl.hpp"
-#include "RMMotor.hpp"
 #include "Referee.hpp"
 #include "app_framework.hpp"
 #include "cycle_value.hpp"
-#include "event.hpp"
 #include "libxr_def.hpp"
-#include "libxr_rw.hpp"
 #include "libxr_time.hpp"
-#include "message.hpp"
 #include "pid.hpp"
 #include "timebase.hpp"
 #include "timer.hpp"
@@ -67,11 +61,7 @@ class Omni {
     ROTOR,
     FOLLOW,
   };
-  struct Eulerangle {
-    LibXR::EulerAngle<float> roll;
-    LibXR::EulerAngle<float> pitch;
-    LibXR::EulerAngle<float> yaw;
-  };
+
   /**
    * @brief 构造函数，初始化全向轮底盘控制对象
    * @param hw 硬件容器引用
@@ -168,15 +158,20 @@ class Omni {
     thread_.Create(this, ThreadFunction, "OmniChassisThread", task_stack_depth,
                    thread_priority);
     if (referee_ != nullptr) {
-      timer_static_ = LibXR::Timer::CreateTask(DrawUI, this, 300);
-      LibXR::Timer::Add(timer_static_);
-      LibXR::Timer::Start(timer_static_);
+      // 底盘裁判系统 UI 由 Omni 自己的定时器任务周期刷新。
+      timer_ui_ = LibXR::Timer::CreateTask(DrawUI, this, UI_REFRESH_PERIOD_MS);
+      LibXR::Timer::Add(timer_ui_);
+      LibXR::Timer::Start(timer_ui_);
     }
+
     auto start_ctrl_callback = LibXR::Callback<uint32_t>::Create(
         [](bool in_isr, Omni* omni, uint32_t event_id) {
           UNUSED(in_isr);
           UNUSED(event_id);
+          omni->mutex_.Lock();
           omni->chassis_event_ = ChassisMode::RELAX;
+          ResetModeUILocked(omni);
+          omni->mutex_.Unlock();
         },
         this);
 
@@ -184,7 +179,10 @@ class Omni {
         [](bool in_isr, Omni* omni, uint32_t event_id) {
           UNUSED(in_isr);
           UNUSED(event_id);
+          omni->mutex_.Lock();
           omni->chassis_event_ = ChassisMode::RELAX;
+          ResetModeUILocked(omni);
+          omni->mutex_.Unlock();
         },
         this);
 
@@ -282,7 +280,8 @@ class Omni {
    */
   void SetMode(uint32_t mode) {
     mutex_.Lock();
-    chassis_event_ = static_cast<ChassisMode>(mode);
+    const ChassisMode NEXT_MODE = static_cast<ChassisMode>(mode);
+    chassis_event_ = NEXT_MODE;
     pid_omega_.Reset();
     pid_velocity_x_.Reset();
     pid_velocity_y_.Reset();
@@ -367,11 +366,10 @@ class Omni {
   }
 
   /**
-   * @brief 交给上坡前馈的软限位
-   *
-   * @param x
-   * @param dz
-   * @return float
+   * @brief 前馈死区软限幅
+   * @param x 输入值
+   * @param dz 死区范围
+   * @return 软限幅后的输出
    */
   float SoftDeadzone(float x, float dz) {
     if (fabs(x) < dz) {
@@ -382,8 +380,7 @@ class Omni {
   }
 
   /**
-   * @brief 前馈
-   *
+   * @brief 计算姿态前馈
    */
   void FeedForward() {
     // ===== Step0: wrap =====
@@ -581,7 +578,6 @@ class Omni {
    * @brief 功率控制更新
    */
   void PowerControlUpdate() {
-    /* 采样当前反馈电流和转速，供功率模型参数估计使用。 */
     for (int i = 0; i < 4; i++) {
       motor_data_.rotorspeed_rpm_3508[i] = motor_feedback_[i].velocity;
       motor_data_.output_current_3508[i] =
@@ -610,14 +606,12 @@ class Omni {
     bool power_control_online = power_control_->IsOnline();
     bool boost_mode = (cmd_data_.self_define == CMD::ChasStat::BOOST);
 
-    /* 裁判系统离线或上限异常时，回退到本地默认功率上限。 */
     float max_power =
         static_cast<float>(referee_chassis_pack_.rs.chassis_power_limit);
     if (!referee_online || max_power <= 1.0f) {
       max_power = OMNI_CHASSIS_MAX_POWER;
     }
 
-    /* BOOST 模式按电容能量分档提升可用功率上限。 */
     if (power_control_online && boost_mode) {
       float cap_energy = power_control_->GetCapEnergy();
       if (cap_energy > 0.8f) {
@@ -632,7 +626,6 @@ class Omni {
     power_control_->OutputLimit(max_power);
     power_control_data_ = power_control_->GetPowerControlData();
 
-    /* 受限程度估计：限幅后电流总量 / 请求电流总量。 */
     float req_current_abs_sum = 0.0f;
     float lim_current_abs_sum = 0.0f;
     for (int i = 0; i < 4; i++) {
@@ -651,7 +644,6 @@ class Omni {
           std::clamp(lim_current_abs_sum / req_current_abs_sum, 0.0f, 1.0f);
     }
 
-    /* 将裁判缓冲能量映射为缩放因子；离线时保持 1.0。 */
     float buffer_scale = 1.0f;
     if (referee_online) {
       float buffer_range =
@@ -665,7 +657,6 @@ class Omni {
                      (1.0f - PARAM.rotor_omega_min_scale) * buffer_norm;
     }
 
-    /* 合成目标缩放并做一阶低通，抑制跳变。 */
     float limit_scale =
         power_control_data_.is_power_limited
             ? std::clamp(power_limit_ratio, PARAM.rotor_omega_min_scale, 1.0f)
@@ -678,7 +669,6 @@ class Omni {
     rotor_dynamic_scale_ =
         std::clamp(rotor_dynamic_scale_, PARAM.rotor_omega_min_scale, 1.0f);
 
-    /* 仅在小陀螺模式保留缩放，其他模式统一复位。 */
     if (chassis_event_ != ChassisMode::ROTOR) {
       rotor_dynamic_scale_ = 1.0f;
     }
