@@ -313,10 +313,11 @@ class Helm {
                                : motor_wheel_feedback_[i].velocity;
       speed_error_3508[i] = target_speed_[i] - actual_speed;
 
-      motor_data_.output_current_3508[i] =
-          std::clamp(wheel_out_[i] * 16384.0f, -16384.0f, 16384.0f);
-      motor_data_.output_current_6020[i] =
-          std::clamp(steer_out_[i] * 16384.0f, -16384.0f, 16384.0f);
+      motor_data_.output_current_3508[i] = std::clamp(
+          wheel_out_[i] * M3508_NM_TO_LSB_RATIO / PARAM.reduction_ratio,
+          -16384.0f, 16384.0f);
+      motor_data_.output_current_6020[i] = std::clamp(
+          steer_out_[i] * GM6020_NM_TO_LSB_RATIO, -16384.0f, 16384.0f);
     }
 
     /* 计算 6020 舵向速度跟踪误差 */
@@ -428,7 +429,7 @@ class Helm {
           x = -sinf(wheel_pos) * target_omega_ * SQRT2 + target_vx_;
           y = -cosf(wheel_pos) * target_omega_ * SQRT2 + target_vy_;
 
-          if (fabsf(x) < 1e-4f && fabsf(y) < 1e-4f) {
+          if (fabsf(x) < 0.05f && fabsf(y) < 0.05f) {
             target_angle_[i] = wheel_pos;
             target_speed_[i] = 0.0f;
           } else {
@@ -502,7 +503,7 @@ class Helm {
         wheel_out_[i] =
             std::clamp(power_control_data_.new_output_current_3508[i] /
                            M3508_NM_TO_LSB_RATIO * PARAM.reduction_ratio,
-                       -6.0f, 6.0f);
+                       -4.4f, 4.4f);
         steer_out_[i] = static_cast<float>(
             std ::clamp(power_control_data_.new_output_current_6020[i] /
                             GM6020_NM_TO_LSB_RATIO * 1.0,
@@ -514,7 +515,7 @@ class Helm {
       LostCtrl();
     } else {
       for (int i = 0; i < 4; i++) {
-        motor_wheel_cmd_[i].torque = std::clamp(wheel_out_[i], -6.0f, 6.0f);
+        motor_wheel_cmd_[i].torque = std::clamp(wheel_out_[i], -4.4f, 4.4f);
         motor_steer_cmd_[i].torque = std::clamp(steer_out_[i], -2.5f, 2.5f);
       }
       for (int i = 0; i < 4; i++) {
@@ -532,9 +533,8 @@ class Helm {
   float target_omega_ = 0.0f;
 
   bool motor_reverse_[4]{false, false, false, false};
-  LibXR::CycleValue<float> zero_[4] = {1.11367011, 3.1254859, 0.479369015,
-                                       3.55500054};
-
+  LibXR::CycleValue<float> zero_[4] = {1.10063124, 2.05323339, 3.2244277,
+                                       0.979446769};
   float current_yaw_ = 0.0f;
   float delta_yaw_ = 0.0f;
 

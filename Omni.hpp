@@ -202,7 +202,7 @@ class Omni {
     LibXR::Topic::ASyncSubscriber<Referee::ChassisPack> referee_suber(
         "chassis_ref");
     LibXR::Topic::ASyncSubscriber<LibXR::EulerAngle<float>> euler_suber(
-        "gimbal_euler");
+        "ahrs_euler");
     LibXR::Topic::ASyncSubscriber<float> yawmotor_angle_suber("yawmotor_angle");
     LibXR::Topic::ASyncSubscriber<float> pitchmotor_angle_suber("pitchmotor_angle");
 
@@ -615,11 +615,11 @@ class Omni {
     if (power_control_online && boost_mode) {
       float cap_energy = power_control_->GetCapEnergy();
       if (cap_energy > 0.8f) {
-        max_power += 100.0f;
+        max_power += 300.0f;
       } else if (cap_energy > 0.5f) {
-        max_power += 60.0f;
+        max_power += 200.0f;
       } else if (cap_energy > 0.25f) {
-        max_power += 40.0f;
+        max_power += 100.0f;
       }
     }
 
