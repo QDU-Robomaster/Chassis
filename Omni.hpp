@@ -284,6 +284,8 @@ class Omni {
     mutex_.Lock();
     const ChassisMode NEXT_MODE = static_cast<ChassisMode>(mode);
     chassis_event_ = NEXT_MODE;
+    ui_text_initialized_ = false;
+    ui_refresh_tick_ = UI_MODE_TEXT_TICK;
     pid_omega_.Reset();
     pid_velocity_x_.Reset();
     pid_velocity_y_.Reset();
@@ -769,6 +771,12 @@ class Omni {
   static constexpr uint32_t UI_REFRESH_PERIOD_MS = 100;
   static constexpr uint32_t UI_BOX_RESEND_DIV = 10;
   static constexpr uint32_t UI_GUIDE_RESEND_OFFSET = 1;
+  static constexpr uint32_t UI_MODE_TEXT_TICK = 3;
+  static constexpr uint32_t UI_TEXT_READD_DIV = 10;
+  static constexpr uint32_t UI_CAP_FILL_REFRESH_DIV = 5;
+  static constexpr uint32_t UI_CAP_FILL_REFRESH_OFFSET = 2;
+  // 电容条低频重建周期 客户端丢图后靠 ADD 补回来
+  static constexpr uint32_t UI_CAP_FILL_READD_DIV = 50;
 
   static void ResetModeUILocked(Omni* omni) {
     omni->ui_text_initialized_ = false;
@@ -861,9 +869,11 @@ class Omni {
       return;
     }
 
-    if ((UI_TICK % UI_BOX_RESEND_DIV) == 2) {
+    if ((UI_TICK % UI_CAP_FILL_REFRESH_DIV) == UI_CAP_FILL_REFRESH_OFFSET) {
       Referee::UIFigure cap_fill_fig{};
-      // 单独更新电容框内部的能量填充条。
+      const bool REBUILD_CAP_FILL =
+          !UI_CAP_FILL_INITIALIZED || (UI_TICK % UI_CAP_FILL_READD_DIV) == 2;
+      // 单独更新电容框内部的能量填充条
       const uint16_t INNER_X1 = UI_CAP_BOX_X1 + UI_CAP_FILL_MARGIN;
       const uint16_t INNER_Y1 = UI_CAP_BOX_Y1 + UI_CAP_FILL_MARGIN;
       const uint16_t INNER_Y2 = UI_CAP_BOX_Y2 - UI_CAP_FILL_MARGIN;
@@ -880,8 +890,8 @@ class Omni {
       }
       omni->referee_->FillRect(
           cap_fill_fig, "CPI",
-          UI_CAP_FILL_INITIALIZED ? Referee::UIFigureOp::UI_OP_MODIFY
-                                  : Referee::UIFigureOp::UI_OP_ADD,
+          REBUILD_CAP_FILL ? Referee::UIFigureOp::UI_OP_ADD
+                           : Referee::UIFigureOp::UI_OP_MODIFY,
           UI_LAYER_CHASSIS,
           CAP_ONLINE ? Referee::UIColor::UI_COLOR_WHITE
                      : Referee::UIColor::UI_COLOR_BLACK,
@@ -923,11 +933,13 @@ class Omni {
     Referee::UICharacter mode_fig{};
     char mode_text[16]{};
     FormatModeText(mode_text, MODE);
+    const bool REBUILD_MODE_TEXT =
+        !UI_TEXT_INITIALIZED || (UI_TICK % UI_TEXT_READD_DIV) == 4;
     // 底盘模式文字本体。
     omni->referee_->FillCharacter(
         mode_fig, "CMT",
-        UI_TEXT_INITIALIZED ? Referee::UIFigureOp::UI_OP_MODIFY
-                            : Referee::UIFigureOp::UI_OP_ADD,
+        REBUILD_MODE_TEXT ? Referee::UIFigureOp::UI_OP_ADD
+                          : Referee::UIFigureOp::UI_OP_MODIFY,
         UI_LAYER_CHASSIS, Referee::UIColor::UI_COLOR_CYAN, UI_FONT_SIZE,
         UI_CHAR_WIDTH, UI_MODE_TEXT_X, UI_MODE_TEXT_Y, mode_text);
     if (omni->referee_->SendUICharacter(ROBOT_ID, CLIENT_ID, mode_fig) ==
