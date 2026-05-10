@@ -201,7 +201,7 @@ class Omni {
     LibXR::Topic::ASyncSubscriber<Referee::ChassisPack> referee_suber(
         "chassis_ref");
     LibXR::Topic::ASyncSubscriber<LibXR::EulerAngle<float>> euler_suber(
-        "gimbal_euler");
+        "ahrs_euler");
     LibXR::Topic::ASyncSubscriber<float> yawmotor_angle_suber("yawmotor_angle");
 
     cmd_suber.StartWaiting();
@@ -275,6 +275,8 @@ class Omni {
     mutex_.Lock();
     const ChassisMode NEXT_MODE = static_cast<ChassisMode>(mode);
     chassis_event_ = NEXT_MODE;
+    ui_text_initialized_ = false;
+    ui_refresh_tick_ = UI_MODE_TEXT_TICK;
     pid_omega_.Reset();
     pid_velocity_x_.Reset();
     pid_velocity_y_.Reset();
@@ -657,6 +659,8 @@ class Omni {
   static constexpr uint32_t UI_REFRESH_PERIOD_MS = 100;
   static constexpr uint32_t UI_BOX_RESEND_DIV = 10;
   static constexpr uint32_t UI_GUIDE_RESEND_OFFSET = 1;
+  static constexpr uint32_t UI_MODE_TEXT_TICK = 3;
+  static constexpr uint32_t UI_TEXT_READD_DIV = 10;
 
   static void ResetModeUILocked(Omni* omni) {
     omni->ui_text_initialized_ = false;
@@ -811,11 +815,13 @@ class Omni {
     Referee::UICharacter mode_fig{};
     char mode_text[16]{};
     FormatModeText(mode_text, MODE);
+    const bool REBUILD_MODE_TEXT =
+        !UI_TEXT_INITIALIZED || (UI_TICK % UI_TEXT_READD_DIV) == 4;
     // 底盘模式文字本体。
     omni->referee_->FillCharacter(
         mode_fig, "CMT",
-        UI_TEXT_INITIALIZED ? Referee::UIFigureOp::UI_OP_MODIFY
-                            : Referee::UIFigureOp::UI_OP_ADD,
+        REBUILD_MODE_TEXT ? Referee::UIFigureOp::UI_OP_ADD
+                          : Referee::UIFigureOp::UI_OP_MODIFY,
         UI_LAYER_CHASSIS, Referee::UIColor::UI_COLOR_CYAN, UI_FONT_SIZE,
         UI_CHAR_WIDTH, UI_MODE_TEXT_X, UI_MODE_TEXT_Y, mode_text);
     if (omni->referee_->SendUICharacter(ROBOT_ID, CLIENT_ID, mode_fig) ==

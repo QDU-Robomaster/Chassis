@@ -217,7 +217,7 @@ class Helm {
       helm->UpdateCMD();
       helm->topic_delta_yaw_.Publish(helm->delta_yaw_);
       helm->Helmcontrol();
-      // helm->PowerControlUpdate();
+      helm->PowerControlUpdate();
       helm->mutex_.Unlock();
       helm->Output();
       helm->thread_.SleepUntil(last_time, 2);
@@ -311,10 +311,11 @@ class Helm {
                                : motor_wheel_feedback_[i].velocity;
       speed_error_3508[i] = target_speed_[i] - actual_speed;
 
-      motor_data_.output_current_3508[i] =
-          std::clamp(wheel_out_[i] * 16384.0f, -16384.0f, 16384.0f);
-      motor_data_.output_current_6020[i] =
-          std::clamp(steer_out_[i] * 16384.0f, -16384.0f, 16384.0f);
+      motor_data_.output_current_3508[i] = std::clamp(
+          wheel_out_[i] * M3508_NM_TO_LSB_RATIO / PARAM.reduction_ratio,
+          -16384.0f, 16384.0f);
+      motor_data_.output_current_6020[i] = std::clamp(
+          steer_out_[i] * GM6020_NM_TO_LSB_RATIO, -16384.0f, 16384.0f);
     }
 
     /* 计算 6020 舵向速度跟踪误差 */
@@ -500,7 +501,7 @@ class Helm {
         wheel_out_[i] =
             std::clamp(power_control_data_.new_output_current_3508[i] /
                            M3508_NM_TO_LSB_RATIO * PARAM.reduction_ratio,
-                       -6.0f, 6.0f);
+                       -4.4f, 4.4f);
         steer_out_[i] = static_cast<float>(
             std ::clamp(power_control_data_.new_output_current_6020[i] /
                             GM6020_NM_TO_LSB_RATIO * 1.0,
@@ -512,7 +513,7 @@ class Helm {
       LostCtrl();
     } else {
       for (int i = 0; i < 4; i++) {
-        motor_wheel_cmd_[i].torque = std::clamp(wheel_out_[i], -6.0f, 6.0f);
+        motor_wheel_cmd_[i].torque = std::clamp(wheel_out_[i], -4.4f, 4.4f);
         motor_steer_cmd_[i].torque = std::clamp(steer_out_[i], -2.5f, 2.5f);
       }
       for (int i = 0; i < 4; i++) {
@@ -544,7 +545,7 @@ class Helm {
   float steer_out_[4] = {0.0f, 0.0f, 0.0f, 0.0f};
   float steer_angle_[4] = {0.0, 0.0, 0.0, 0.0};
 
-  float motor_max_speed_ = 4000.0;
+  float motor_max_speed_ = 9000.0;
 
   LibXR::CycleValue<float> main_direct_ = 0.0f;
 
