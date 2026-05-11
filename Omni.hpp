@@ -27,12 +27,11 @@ depends: []
 #include "timebase.hpp"
 #include "timer.hpp"
 
-#define M3508_NM_TO_LSB_RATIO \
-  52437.5f /* 3508转子扭矩转化为电机控制单位的比例 */
+#define M3508_NM_TO_LSB_RATIO 52437.5f /* 3508 转子扭矩到电机控制值的比例 */
 
-#define OMNI_MOTOR_MAX_OMEGA 52 /* 电机输出轴最大角速度 */
+#define OMNI_MOTOR_MAX_OMEGA 52 /* 全向轮输出轴最大角速度 rad/s */
 
-#define OMNI_CHASSIS_MAX_POWER 100
+#define OMNI_CHASSIS_MAX_POWER 100 /* 裁判系统离线时的默认功率上限 W */
 
 template <typename ChassisType>
 class Chassis;
@@ -49,10 +48,11 @@ class Omni {
     float gravity = 0.0f;
     float length = 0.0f;
     float width = 0.0f;
-    float rotor_speed_scale = 1.0f; /* 小陀螺转速缩放比例，降低可给平移留出更多功率 */
+    float rotor_speed_scale =
+        1.0f; /* 小陀螺转速缩放比例，降低可给平移留出更多功率 */
     float rotor_omega_min_scale = 0.55f; /* 功率受限时小陀螺最小转速比例 */
-    float rotor_buffer_low_j = 35.0f;    /* 缓冲能量低阈值，单位 J */
-    float rotor_buffer_high_j = 70.0f;   /* 缓冲能量高阈值，单位 J */
+    float rotor_buffer_low_j = 35.0f;    /* 缓冲能量低阈值 J */
+    float rotor_buffer_high_j = 70.0f;   /* 缓冲能量高阈值 J */
     float rotor_scale_lpf_alpha = 0.2f;  /* 动态缩放一阶低通系数 */
   };
   enum class ChassisMode : uint8_t {
@@ -113,13 +113,13 @@ class Omni {
        LibXR::PID<float>::Param pid_steer_speed_3,
        LibXR::Thread::Priority thread_priority = LibXR::Thread::Priority::HIGH)
       : PARAM(chassis_param),
-        motor_wheel_0_(motor_wheel_0),   /*wheel0   ▲ y  wheel3*/
-        motor_wheel_1_(motor_wheel_1),   /*    ↙    │     ↖    */
-        motor_wheel_2_(motor_wheel_2),   /*         │          */
-        motor_wheel_3_(motor_wheel_3),   /* ――――――――│―――――――▶x */
-        pid_follow_(pid_follow),         /*         │          */
-        pid_velocity_x_(pid_velocity_x), /*    ➘    │     ➚    */
-        pid_velocity_y_(pid_velocity_y), /*wheel1   │    wheel2*/
+        motor_wheel_0_(motor_wheel_0),   /* wheel0   ▲ y  wheel3 */
+        motor_wheel_1_(motor_wheel_1),   /*     ↙    │     ↖     */
+        motor_wheel_2_(motor_wheel_2),   /*          │           */
+        motor_wheel_3_(motor_wheel_3),   /* ─────────┼────────▶x */
+        pid_follow_(pid_follow),         /*          │           */
+        pid_velocity_x_(pid_velocity_x), /*     ↘    │     ↗     */
+        pid_velocity_y_(pid_velocity_y), /* wheel1   │    wheel2 */
         pid_omega_(pid_omega),
         pid_wheel_speed_{pid_wheel_speed_0, pid_wheel_speed_1,
                          pid_wheel_speed_2, pid_wheel_speed_3},
@@ -158,7 +158,7 @@ class Omni {
     thread_.Create(this, ThreadFunction, "OmniChassisThread", task_stack_depth,
                    thread_priority);
     if (referee_ != nullptr) {
-      // 底盘裁判系统 UI 由 Omni 自己的定时器任务周期刷新。
+      /* 底盘裁判系统 UI 由 Omni 自己的定时器任务周期刷新 */
       timer_ui_ = LibXR::Timer::CreateTask(DrawUI, this, UI_REFRESH_PERIOD_MS);
       LibXR::Timer::Add(timer_ui_);
       LibXR::Timer::Start(timer_ui_);
@@ -204,7 +204,8 @@ class Omni {
     LibXR::Topic::ASyncSubscriber<LibXR::EulerAngle<float>> euler_suber(
         "ahrs_euler");
     LibXR::Topic::ASyncSubscriber<float> yawmotor_angle_suber("yawmotor_angle");
-    LibXR::Topic::ASyncSubscriber<float> pitchmotor_angle_suber("pitchmotor_angle");
+    LibXR::Topic::ASyncSubscriber<float> pitchmotor_angle_suber(
+        "pitchmotor_angle");
 
     cmd_suber.StartWaiting();
     referee_suber.StartWaiting();
@@ -300,7 +301,7 @@ class Omni {
   void UpdateCMD() {
     float max_v = PARAM.wheel_radius * OMNI_MOTOR_MAX_OMEGA;
 
-    /*计算omega*/
+    /* 先生成目标角速度 */
     switch (chassis_event_) {
       case ChassisMode::RELAX:
         target_omega_ = 0.0f;
@@ -314,7 +315,7 @@ class Omni {
         target_omega_ = -static_cast<float>(max_v / PARAM.wheel_to_center);
         break;
 
-        /*正方向跟随云台*/
+        /* 正方向跟随云台 */
       case ChassisMode::FOLLOW:
         target_omega_ = -pid_follow_.Calculate(0.0f, yawmotor_angle_, dt_);
         break;
@@ -323,7 +324,7 @@ class Omni {
         break;
     }
 
-    /* 计算vx,vy */
+    /* 再生成目标平移速度 */
     switch (chassis_event_) {
       case ChassisMode::RELAX:
         target_vx_ = 0.0f;
@@ -341,7 +342,7 @@ class Omni {
       } break;
       case ChassisMode::INDEPENDENT: {
         const float SQRT2 = 1.41421356237f;
-        /* 适配菱形速度 */
+        /* 独立模式用菱形限幅适配摇杆边界 */
         float s = fabsf(cmd_data_.x) + fabsf(cmd_data_.y);
         float k = (s <= 1.0f) ? max_v : (max_v / s);
         target_vx_ = SQRT2 * k * cmd_data_.x;
@@ -351,7 +352,7 @@ class Omni {
         break;
     }
 
-    /* 小陀螺模式下，根据平移输入与功率状态动态调整旋转速度 */
+    /* 小陀螺模式按平移输入和功率状态动态压低转速 */
     float rotor_translation_scale = 1.0f;
     if (chassis_event_ == ChassisMode::ROTOR) {
       float translation_magnitude =
@@ -385,7 +386,7 @@ class Omni {
    * @brief 计算姿态前馈
    */
   void FeedForward() {
-    // ===== Step0: wrap =====
+    /* 角度先包到正负 pi */
     auto WrapToPi = [](float a) {
       while (a > M_PI) a -= 2.0f * M_PI;
       while (a < -M_PI) a += 2.0f * M_PI;
@@ -399,7 +400,7 @@ class Omni {
     float yaw_m = WrapToPi(yawmotor_angle_);
     float pitch_m = WrapToPi(pitchmotor_angle_);
 
-    // ===== 三角函数 =====
+    /* 预计算姿态三角函数 */
     float cy = cosf(yaw_g), sy = sinf(yaw_g);
     float cp = cosf(pitch_g), sp = sinf(pitch_g);
     float cr = cosf(roll_g), sr = sinf(roll_g);
@@ -407,7 +408,7 @@ class Omni {
     float cy_m = cosf(yaw_m), sy_m = sinf(yaw_m);
     float cp_m = cosf(pitch_m), sp_m = sinf(pitch_m);
 
-    // ===== R_wg = Rz * Ry * Rx =====
+    /* 世界系到云台系的旋转矩阵 */
     float R_wg[3][3];
 
     post_x_[0] = -PARAM.width / 2;
@@ -432,7 +433,7 @@ class Omni {
     R_wg[2][1] = cp * sr;
     R_wg[2][2] = cp * cr;
 
-    // ===== R_cg = Rz * Ry =====
+    /* 底盘系到云台系的旋转矩阵 */
     float R_cg[3][3];
 
     R_cg[0][0] = cy_m * cp_m;
@@ -447,7 +448,7 @@ class Omni {
     R_cg[2][1] = 0.0f;
     R_cg[2][2] = cp_m;
 
-    // ===== R_gc = 转置 =====
+    /* 转置得到云台系到底盘系的旋转矩阵 */
     float R_gc[3][3];
     for (int i = 0; i < 3; i++) {
       for (int j = 0; j < 3; j++) {
@@ -455,7 +456,7 @@ class Omni {
       }
     }
 
-    // ===== R_wc = R_wg * R_gc =====
+    /* 合成世界系到底盘系的旋转矩阵 */
     float R_wc[3][3] = {{0}};
 
     for (int i = 0; i < 3; i++) {
@@ -465,7 +466,7 @@ class Omni {
       }
     }
 
-    // ===== 提取底盘姿态 =====
+    /* 提取底盘俯仰和横滚用于前馈 */
     float val = -R_wc[2][0];
     if (val > 1.0f) val = 1.0f;
     if (val < -1.0f) val = -1.0f;
@@ -561,14 +562,14 @@ class Omni {
     if (chassis_event_ == ChassisMode::RELAX) {
       LostCtrl();
     } else {
-      /*目标角速度*/
+      /* 轮速 PID 输出 */
       for (int i = 0; i < 4; i++) {
         target_motor_current_[i] = pid_wheel_speed_[i].Calculate(
             target_motor_omega_[i],
             motor_feedback_[i].omega / PARAM.reduction_ratio, dt_);
       }
 
-      /*计算输出*/
+      /* 合成动力学输出和上坡前馈 */
       for (int i = 0; i < 4; i++) {
         output_[i] = target_motor_force_[i] * PARAM.wheel_radius +
                      target_motor_current_[i] + torque_ff_[i];
@@ -688,7 +689,7 @@ class Omni {
     float force_y = pid_velocity_y_.Calculate(target_vy_, now_vy_, dt_);
     float force_z = pid_omega_.Calculate(target_omega_, now_omega_, dt_);
 
-    /* 分配（最小范数 / 平均分配 torque）//切向合力=质量*角加速度*转动半径 */
+    /* 按全向轮受力方向分配前馈力 */
     target_motor_force_[0] = (-SQRT2 * force_x - SQRT2 * force_y + force_z) / 4;
     target_motor_force_[1] = (SQRT2 * force_x - SQRT2 * force_y + force_z) / 4;
     target_motor_force_[2] = (SQRT2 * force_x + SQRT2 * force_y + force_z) / 4;
@@ -700,7 +701,7 @@ class Omni {
    * @details 限幅并输出四个全向轮的电流控制指令
    */
   void OutputToDynamics() {
-    /*如果超功率了output根据功率的数值来计算*/
+    /* 功率受限时使用限幅后的电流反算输出扭矩 */
     if (power_control_data_.is_power_limited) {
       for (int i = 0; i < 4; i++) {
         output_[i] =
@@ -732,41 +733,30 @@ class Omni {
   }
 
  private:
-  // UI 参数约定：
-  // - SCREEN_W/H: 客户端坐标系分辨率（用于计算中心点和绝对位置）
-  // - LAYER_CHASSIS: 底盘 UI 专用图层
-  // - ORBIT_*: 车头方位点绕屏幕中心旋转的轨迹半径/点半径
-  // - DEFAULT_WIDTH/CHAR_WIDTH: 图形线宽与字符线宽
-  static constexpr uint16_t UI_SCREEN_W = 1960;
-  static constexpr uint16_t UI_SCREEN_H = 1042;
-  static constexpr uint16_t UI_LAYER_CHASSIS = 0;
-  static constexpr uint16_t UI_ORBIT_RADIUS = 260;
-  static constexpr uint16_t UI_ORBIT_DOT_RADIUS = 20;
-  static constexpr uint16_t UI_ROUTE_OUTER_RADIUS = 215;
-  static constexpr uint16_t UI_ROUTE_INNER_RADIUS = 110;
-  static constexpr uint16_t UI_ROUTE_HALF_GAP = 55;
-  static constexpr uint16_t UI_DEFAULT_WIDTH = 1;
+  /* 底盘 UI 图层, 模式文字、中间外框、电容框和电容条共用 */
+  static constexpr uint8_t UI_LAYER_CHASSIS = 3;
+  /* 底盘 UI 文字共用线宽和字号 */
   static constexpr uint16_t UI_CHAR_WIDTH = 2;
   static constexpr uint16_t UI_FONT_SIZE = 20;
-  // 左下区域底盘模式文字的位置。
+  /* 左下区域底盘模式文字位置 */
   static constexpr uint16_t UI_MODE_TEXT_X = 160;
   static constexpr uint16_t UI_MODE_TEXT_Y = 700;
-  // 左侧电容外框的位置和尺寸。
+  /* 左侧电容外框位置和尺寸 */
   static constexpr uint16_t UI_CAP_BOX_X1 = 160;
   static constexpr uint16_t UI_CAP_BOX_Y1 = 612;
   static constexpr uint16_t UI_CAP_BOX_X2 = 320;
   static constexpr uint16_t UI_CAP_BOX_Y2 = 640;
   static constexpr uint16_t UI_CAP_BOX_WIDTH = 2;
-  // 电容能量填充条使用的内边距和线宽。
+  /* 电容能量填充条内边距和线宽 */
   static constexpr uint16_t UI_CAP_FILL_MARGIN = 4;
   static constexpr uint16_t UI_CAP_FILL_WIDTH = 8;
-  // 中间外框的位置和尺寸。当前代码只绘制外框，没有在框内绘制模式文字。
+  /* 中间外框位置和尺寸, 当前只绘制外框 */
   static constexpr uint16_t UI_STATUS_BOX_X1 = 780;
   static constexpr uint16_t UI_STATUS_BOX_Y1 = 360;
   static constexpr uint16_t UI_STATUS_BOX_X2 = 1200;
   static constexpr uint16_t UI_STATUS_BOX_Y2 = 760;
   static constexpr uint16_t UI_STATUS_BOX_WIDTH = 4;
-  // 中间外框左右两侧引导斜线的线宽与端点坐标。
+  /* 中间外框左右两侧引导斜线的线宽与端点坐标 */
   static constexpr uint16_t UI_STATUS_GUIDE_WIDTH = 4;
   static constexpr uint16_t UI_STATUS_GUIDE_LEFT_X1 = 120;
   static constexpr uint16_t UI_STATUS_GUIDE_LEFT_Y1 = 120;
@@ -776,7 +766,7 @@ class Omni {
   static constexpr uint16_t UI_STATUS_GUIDE_RIGHT_Y1 = 120;
   static constexpr uint16_t UI_STATUS_GUIDE_RIGHT_X2 = 1320;
   static constexpr uint16_t UI_STATUS_GUIDE_RIGHT_Y2 = 380;
-  // 底盘 UI 定时器刷新周期，以及外框/引导线的分时重发节奏。
+  /* 底盘 UI 刷新周期和分时重发节奏 */
   static constexpr uint32_t UI_REFRESH_PERIOD_MS = 100;
   static constexpr uint32_t UI_BOX_RESEND_DIV = 10;
   static constexpr uint32_t UI_GUIDE_RESEND_OFFSET = 1;
@@ -784,7 +774,7 @@ class Omni {
   static constexpr uint32_t UI_TEXT_READD_DIV = 10;
   static constexpr uint32_t UI_CAP_FILL_REFRESH_DIV = 5;
   static constexpr uint32_t UI_CAP_FILL_REFRESH_OFFSET = 2;
-  // 电容条低频重建周期 客户端丢图后靠 ADD 补回来
+  /* 电容条低频重建周期, 客户端丢图后靠 ADD 补回来 */
   static constexpr uint32_t UI_CAP_FILL_READD_DIV = 50;
 
   static void ResetModeUILocked(Omni* omni) {
@@ -796,212 +786,95 @@ class Omni {
     omni->ui_refresh_tick_ = 0;
   }
 
-  // 图元名固定为 3 字节，不足补空格，便于后续按名称 MODIFY。
-  static void SetFigureName(uint8_t (&dst)[3], const char* name) {
-    dst[0] = ' ';
-    dst[1] = ' ';
-    dst[2] = ' ';
-    if (name == nullptr) {
-      return;
-    }
-    for (int i = 0; i < 3 && name[i] != '\0'; ++i) {
-      dst[i] = static_cast<uint8_t>(name[i]);
-    }
-  }
-
-  /**
-   * @brief 填充字符图元
-   * @param fig 字符图元结构体
-   * @param name 图元名称
-   * @param op 操作类型
-   * @param layer 图层号
-   * @param color 颜色
-   * @param font_size 字体大小
-   * @param width 线宽
-   * @param x X坐标
-   * @param y Y坐标
-   * @param text 文本内容
-   */
-  static void FillCharacter(Referee::UICharacter& fig, const char* name,
-                            Referee::UIFigureOp op, uint8_t layer,
-                            Referee::UIColor color, uint16_t font_size,
-                            uint16_t width, uint16_t x, uint16_t y,
-                            const char* text) {
-    fig = {};
-
-    SetFigureName(fig.grapic_data_struct.figure_name, name);
-    fig.grapic_data_struct.operate_type = static_cast<uint32_t>(op);
-    fig.grapic_data_struct.figure_type =
-        static_cast<uint32_t>(Referee::UIFigureType::UI_TYPE_CHAR);
-    fig.grapic_data_struct.layer = layer;
-    fig.grapic_data_struct.color = static_cast<uint32_t>(color);
-    fig.grapic_data_struct.details_a = font_size;
-
-    // ⭐关键：强制清零整个data区
-    memset(fig.data, 0, sizeof(fig.data));
-
-    uint16_t text_len = 0;
-    if (text != nullptr) {
-      text_len = strnlen(text, sizeof(fig.data) - 1);  // 留1字节给\0
-      memcpy(fig.data, text, text_len);
-      fig.data[text_len] = '\0';  // ⭐关键：手动终止
-    }
-
-    fig.grapic_data_struct.details_b = text_len;
-
-    // ⭐建议固定
-    fig.grapic_data_struct.width = 1;
-
-    fig.grapic_data_struct.start_x = x;
-    fig.grapic_data_struct.start_y = y;
-  }
-
-  /**
-   * @brief 填充圆形图元
-   * @param fig 圆形图元结构体
-   * @param name 图元名称
-   * @param op 操作类型
-   * @param layer 图层号
-   * @param color 颜色
-   * @param width 线宽
-   * @param x X坐标
-   * @param y Y坐标
-   * @param radius 半径
-   */
-  static void FillCircle(Referee::UIFigure& fig, const char* name,
-                         Referee::UIFigureOp op, uint8_t layer,
-                         Referee::UIColor color, uint16_t width, uint16_t x,
-                         uint16_t y, uint16_t radius) {
-    // 圆形图元统一通过此函数填充，确保字段含义一致。
-    fig = {};
-    SetFigureName(fig.figure_name, name);
-    fig.operate_type = static_cast<uint32_t>(op);
-    fig.figure_type =
-        static_cast<uint32_t>(Referee::UIFigureType::UI_TYPE_CIRCLE);
-    fig.layer = layer;
-    fig.color = static_cast<uint32_t>(color);
-    fig.width = width;
-    fig.start_x = x;
-    fig.start_y = y;
-    fig.details_c = radius;
-  }
-
-  /**
-   * @brief 填充线段图元
-   * @param fig 线段图元结构体
-   * @param name 图元名称
-   * @param op 操作类型
-   * @param layer 图层号
-   * @param color 颜色
-   * @param width 线宽
-   * @param x1 起点 X 坐标
-   * @param y1 起点 Y 坐标
-   * @param x2 终点 X 坐标
-   * @param y2 终点 Y 坐标
-   */
-  static void FillLine(Referee::UIFigure& fig, const char* name,
-                       Referee::UIFigureOp op, uint8_t layer,
-                       Referee::UIColor color, uint16_t width, int16_t x1,
-                       int16_t y1, int16_t x2, int16_t y2) {
-    fig = {};
-    SetFigureName(fig.figure_name, name);
-
-    auto clamp = [](int16_t v) {
-      return std::max<int16_t>(0, std::min<int16_t>(v, 2047));
-    };
-
-    x1 = clamp(x1);
-    y1 = clamp(y1);
-    x2 = clamp(x2);
-    y2 = clamp(y2);
-
-    fig.operate_type = static_cast<uint32_t>(op);
-    fig.figure_type =
-        static_cast<uint32_t>(Referee::UIFigureType::UI_TYPE_LINE);
-    fig.layer = layer;
-    fig.color = static_cast<uint32_t>(color);
-    fig.width = width;
-
-    fig.start_x = x1;
-    fig.start_y = y1;
-    fig.details_d = x2;
-    fig.details_e = y2;
-  }
-
-  /* 定时器回调：最低带宽 UI。第一次 ADD，后续仅在内容变化时 MODIFY。 */
-  static void DrawUI(Omni* omni) {
-    if (omni->referee_ == nullptr) return;
-
-    omni->id = omni->referee_->GetRobotID();
-    if (omni->id == 0) return;
-
-    const uint16_t client = GetClientID(omni->id);
-
-    uint32_t now = LibXR::Timebase::GetMilliseconds();  // ms
-
-    // ===== 每3秒强制重建UI =====
-    bool need_readd =
-        !omni->ui_route_initialized_ || (now - omni->last_ui_add_time_ > 3000);
-
-    if (need_readd) {
-      // ===== 1. 重建静态UI（两条线）=====
-      Referee::UIFigure line1{}, line2{};
-
-      FillLine(line1, "R1", Referee::UIFigureOp::UI_OP_ADD, UI_LAYER_CHASSIS,
-               Referee::UIColor::UI_COLOR_GREEN, UI_ROUTE_WIDTH, 1246, 268,
-               1916, 1078);
-
-      FillLine(line2, "R2", Referee::UIFigureOp::UI_OP_ADD, UI_LAYER_CHASSIS,
-               Referee::UIColor::UI_COLOR_GREEN, UI_ROUTE_WIDTH, 669, 269, 0,
-               1080);
-
-      Referee::UIFigure2 pack{};
-      pack.interaction_figure[0] = line1;
-      pack.interaction_figure[1] = line2;
-
-      omni->referee_->SendUIFigure2(omni->id, client, pack);
-
-      // ===== 标记 =====
-      omni->ui_route_initialized_ = true;
-      omni->last_ui_add_time_ = now;
-
-      //  强制字符UI重新ADD（关键）
-      omni->ui_initialized_ = false;
-
-      return;  //  本帧只做 ADD
-    }
-
-    // ===== 获取底盘模式 =====
-    ChassisMode mode;
-    {
-      omni->mutex_.Lock();
-      mode = omni->chassis_event_;
-      omni->mutex_.Unlock();
-    }
-
-    const char* mode_str = "RELX";
+  static const char* GetModeText(ChassisMode mode) {
     switch (mode) {
       case ChassisMode::RELAX:
-        mode_str = "RELX";
-        break;
+        return "RELX";
       case ChassisMode::INDEPENDENT:
-        mode_str = "INDP";
-        break;
+        return "INDP";
       case ChassisMode::ROTOR:
-        mode_str = "ROTO";
-        break;
+        return "ROTO";
       case ChassisMode::FOLLOW:
-        mode_str = "FOLW";
-        break;
+        return "FOLW";
       default:
-        break;
+        return "UNKN";
+    }
+  }
+
+  static void FormatModeText(char (&text)[16], ChassisMode mode) {
+    std::snprintf(text, sizeof(text), "%s", GetModeText(mode));
+  }
+
+  static void DrawUI(Omni* omni) {
+    if (omni->referee_ == nullptr) {
+      return;
+    }
+    const uint16_t ROBOT_ID = omni->referee_->GetRobotID();
+    if (ROBOT_ID == 0) {
+      return;
+    }
+    const uint16_t CLIENT_ID = omni->referee_->GetClientID(ROBOT_ID);
+
+    omni->mutex_.Lock();
+    const ChassisMode MODE = omni->chassis_event_;
+    const bool UI_TEXT_INITIALIZED = omni->ui_text_initialized_;
+    const bool UI_FRAME_INITIALIZED = omni->ui_frame_initialized_;
+    const bool UI_GUIDE_INITIALIZED = omni->ui_guide_initialized_;
+    const bool UI_CAP_FILL_INITIALIZED = omni->ui_cap_fill_initialized_;
+    const bool UI_LAYER_CLEARED = omni->ui_layer_cleared_;
+    const uint32_t UI_TICK = omni->ui_refresh_tick_++;
+    const bool CAP_ONLINE =
+        omni->power_control_ != nullptr && omni->power_control_->IsOnline();
+    const float CAP_ENERGY = omni->power_control_ != nullptr
+                                 ? omni->power_control_->GetCapEnergy()
+                                 : 0.0f;
+    omni->mutex_.Unlock();
+    Referee::UILayerDelete ui_del{};
+    ui_del.delete_type =
+        static_cast<uint8_t>(Referee::UIDeleteType::UI_DELETE_LAYER);
+    ui_del.layer = UI_LAYER_CHASSIS;
+    if (!UI_LAYER_CLEARED) {
+      if (omni->referee_->SendUILayerDelete(ROBOT_ID, CLIENT_ID, ui_del) !=
+          LibXR::ErrorCode::OK) {
+        return;
+      }
+      omni->mutex_.Lock();
+      omni->ui_layer_cleared_ = true;
+      omni->mutex_.Unlock();
+      return;
+    }
+
+    if (!UI_FRAME_INITIALIZED || (UI_TICK % UI_BOX_RESEND_DIV) == 0) {
+      Referee::UIFigure2 box_figs{};
+      /*
+       * 这里绘制两个外框
+       * CBX 是中间自瞄外框
+       * CPF 是左侧电容外框
+       */
+      omni->referee_->FillRect(
+          box_figs.interaction_figure[0], "CBX", Referee::UIFigureOp::UI_OP_ADD,
+          UI_LAYER_CHASSIS, Referee::UIColor::UI_COLOR_CYAN,
+          UI_STATUS_BOX_WIDTH, UI_STATUS_BOX_X1, UI_STATUS_BOX_Y1,
+          UI_STATUS_BOX_X2, UI_STATUS_BOX_Y2);
+      omni->referee_->FillRect(
+          box_figs.interaction_figure[1], "CPF", Referee::UIFigureOp::UI_OP_ADD,
+          UI_LAYER_CHASSIS, Referee::UIColor::UI_COLOR_WHITE, UI_CAP_BOX_WIDTH,
+          UI_CAP_BOX_X1, UI_CAP_BOX_Y1, UI_CAP_BOX_X2, UI_CAP_BOX_Y2);
+      if (omni->referee_->SendUIFigure2(ROBOT_ID, CLIENT_ID, box_figs) ==
+          LibXR::ErrorCode::OK) {
+        omni->mutex_.Lock();
+        omni->ui_frame_initialized_ = true;
+        omni->ui_cap_fill_initialized_ = false;
+        omni->mutex_.Unlock();
+      }
+      return;
     }
 
     if ((UI_TICK % UI_CAP_FILL_REFRESH_DIV) == UI_CAP_FILL_REFRESH_OFFSET) {
       Referee::UIFigure cap_fill_fig{};
       const bool REBUILD_CAP_FILL =
           !UI_CAP_FILL_INITIALIZED || (UI_TICK % UI_CAP_FILL_READD_DIV) == 2;
-      // 单独更新电容框内部的能量填充条
+      /* 单独更新电容框内部的能量填充条 */
       const uint16_t INNER_X1 = UI_CAP_BOX_X1 + UI_CAP_FILL_MARGIN;
       const uint16_t INNER_Y1 = UI_CAP_BOX_Y1 + UI_CAP_FILL_MARGIN;
       const uint16_t INNER_Y2 = UI_CAP_BOX_Y2 - UI_CAP_FILL_MARGIN;
@@ -1033,22 +906,37 @@ class Omni {
       return;
     }
 
-    // ===== 选择 ADD / MODIFY =====
-    Referee::UIFigureOp op = omni->ui_initialized_
-                                 ? Referee::UIFigureOp::UI_OP_MODIFY
-                                 : Referee::UIFigureOp::UI_OP_ADD;
-
-    Referee::UICharacter char_fig{};
-    FillCharacter(char_fig, "CM", op, UI_LAYER_CHASSIS,
-                  Referee::UIColor::UI_COLOR_CYAN, 20, UI_CHAR_WIDTH, 160, 550,
-                  mode_text);
+    if (!UI_GUIDE_INITIALIZED ||
+        (UI_TICK % UI_BOX_RESEND_DIV) == UI_GUIDE_RESEND_OFFSET) {
+      Referee::UIFigure2 guide_figs{};
+      /* 左右两侧的引导斜线 */
+      omni->referee_->FillLine(guide_figs.interaction_figure[0], "GLF",
+                               Referee::UIFigureOp::UI_OP_ADD, UI_LAYER_CHASSIS,
+                               Referee::UIColor::UI_COLOR_CYAN,
+                               UI_STATUS_GUIDE_WIDTH, UI_STATUS_GUIDE_LEFT_X1,
+                               UI_STATUS_GUIDE_LEFT_Y1, UI_STATUS_GUIDE_LEFT_X2,
+                               UI_STATUS_GUIDE_LEFT_Y2);
+      omni->referee_->FillLine(
+          guide_figs.interaction_figure[1], "GRI",
+          Referee::UIFigureOp::UI_OP_ADD, UI_LAYER_CHASSIS,
+          Referee::UIColor::UI_COLOR_CYAN, UI_STATUS_GUIDE_WIDTH,
+          UI_STATUS_GUIDE_RIGHT_X1, UI_STATUS_GUIDE_RIGHT_Y1,
+          UI_STATUS_GUIDE_RIGHT_X2, UI_STATUS_GUIDE_RIGHT_Y2);
+      if (omni->referee_->SendUIFigure2(ROBOT_ID, CLIENT_ID, guide_figs) ==
+          LibXR::ErrorCode::OK) {
+        omni->mutex_.Lock();
+        omni->ui_guide_initialized_ = true;
+        omni->mutex_.Unlock();
+      }
+      return;
+    }
 
     Referee::UICharacter mode_fig{};
     char mode_text[16]{};
     FormatModeText(mode_text, MODE);
     const bool REBUILD_MODE_TEXT =
         !UI_TEXT_INITIALIZED || (UI_TICK % UI_TEXT_READD_DIV) == 4;
-    // 底盘模式文字本体。
+    /* 底盘模式文字本体 */
     omni->referee_->FillCharacter(
         mode_fig, "CMT",
         REBUILD_MODE_TEXT ? Referee::UIFigureOp::UI_OP_ADD
@@ -1057,8 +945,9 @@ class Omni {
         UI_CHAR_WIDTH, UI_MODE_TEXT_X, UI_MODE_TEXT_Y, mode_text);
     if (omni->referee_->SendUICharacter(ROBOT_ID, CLIENT_ID, mode_fig) ==
         LibXR::ErrorCode::OK) {
-      memcpy(omni->ui_last_mode_text_, mode_text, sizeof(mode_text));
-      omni->ui_initialized_ = true;
+      omni->mutex_.Lock();
+      omni->ui_text_initialized_ = true;
+      omni->mutex_.Unlock();
     }
   }
 
@@ -1152,10 +1041,11 @@ class Omni {
   LibXR::EulerAngle<float> euler_;
   ChassisMode chassis_event_ = ChassisMode::RELAX;
 
-  bool ui_initialized_ = false;
-  bool ui_route_initialized_ = false;
-  uint32_t last_ui_add_time_ = 0;
-  uint16_t id = 0;
-
-  LibXR::Timer::TimerHandle timer_static_;
+  bool ui_text_initialized_ = false;
+  bool ui_frame_initialized_ = false;
+  bool ui_guide_initialized_ = false;
+  bool ui_cap_fill_initialized_ = false;
+  bool ui_layer_cleared_ = false;
+  uint32_t ui_refresh_tick_ = 0;
+  LibXR::Timer::TimerHandle timer_ui_{};
 };

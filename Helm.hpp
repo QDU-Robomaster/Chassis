@@ -119,13 +119,13 @@ class Helm {
         motor_wheel_1_(motor_wheel_1),
         motor_wheel_2_(motor_wheel_2),
         motor_wheel_3_(motor_wheel_3),
-        motor_steer_0_(motor_steer_0),   /*wheel3   ▲ y  wheel2*/
-        motor_steer_1_(motor_steer_1),   /*    ↑    │     ↑    */
-        motor_steer_2_(motor_steer_2),   /*         │          */
-        motor_steer_3_(motor_steer_3),   /* ――――――――│―――――――▶x */
-        pid_follow_(pid_follow),         /*         │          */
-        pid_velocity_x_(pid_velocity_x), /*    ↑    │     ↑    */
-        pid_velocity_y_(pid_velocity_y), /*wheel0   │    wheel1*/
+        motor_steer_0_(motor_steer_0),   /* wheel3   ▲ y  wheel2 */
+        motor_steer_1_(motor_steer_1),   /*     ↑    │     ↑     */
+        motor_steer_2_(motor_steer_2),   /*          │           */
+        motor_steer_3_(motor_steer_3),   /* ─────────┼────────▶x */
+        pid_follow_(pid_follow),         /*          │           */
+        pid_velocity_x_(pid_velocity_x), /*     ↑    │     ↑     */
+        pid_velocity_y_(pid_velocity_y), /* wheel0   │    wheel1 */
         pid_omega_(pid_omega),
         pid_wheel_speed_{pid_wheel_speed_0, pid_wheel_speed_1,
                          pid_wheel_speed_2, pid_wheel_speed_3},
@@ -366,7 +366,7 @@ class Helm {
    * @details 多模式控制底盘
    */
   void Helmcontrol() {
-    // 计算 vx,xy
+    /* 计算目标平移速度 */
     switch (chassis_event_) {
       case (ChassisMode::RELAX):
         target_vx_ = 0.0f;
@@ -406,7 +406,7 @@ class Helm {
         break;
       case (ChassisMode::ROTOR):
         /* 陀螺模式底盘以一定速度旋转 */
-        target_omega_ = -cmd_data_.z;  // 算法调车用
+        target_omega_ = -cmd_data_.z;
         break;
       default:
         target_omega_ = 0.0f;
@@ -446,10 +446,7 @@ class Helm {
         break;
     }
 
-    /**
-     * @brief 判断3508电机是否需要反转
-     *
-     */
+    /* 舵向差超过 90 度时反转轮电机, 减少舵向转动 */
     for (int i = 0; i < 4; i++) {
       if (fabs(
               LibXR::CycleValue(motor_steer_feedback_[i].abs_angle - zero_[i]) -
@@ -460,10 +457,7 @@ class Helm {
       }
     }
 
-    /**
-     * @brief PID计算输出
-     *
-     */
+    /* 根据反转状态计算轮电机和舵向电机输出 */
     for (int i = 0; i < 4; i++) {
       if (motor_reverse_[i]) {
         wheel_out_[i] = pid_wheel_speed_[i].Calculate(
