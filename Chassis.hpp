@@ -176,12 +176,17 @@ depends:
 // clang-format on
 
 #include <cstdint>
-struct MotorData {
-  float output_current_3508[4] = {};
-  float rotorspeed_rpm_3508[4] = {};
+#include <type_traits>
 
-  float output_current_6020[4] = {};
-  float rotorspeed_rpm_6020[4] = {};
+/* 功率控制数组按当前最大底盘需求预留 */
+static constexpr int CHASSIS_POWER_CONTROL_MAX_MOTOR_COUNT = 6;
+
+struct MotorData {
+  float output_current_3508[CHASSIS_POWER_CONTROL_MAX_MOTOR_COUNT] = {};
+  float rotorspeed_rpm_3508[CHASSIS_POWER_CONTROL_MAX_MOTOR_COUNT] = {};
+
+  float output_current_6020[CHASSIS_POWER_CONTROL_MAX_MOTOR_COUNT] = {};
+  float rotorspeed_rpm_6020[CHASSIS_POWER_CONTROL_MAX_MOTOR_COUNT] = {};
 };
 
 #include "CMD.hpp"
@@ -249,8 +254,7 @@ class Chassis : public LibXR::Application {
                 chassis_param.gravity_height, chassis_param.reduction_ratio,
                 chassis_param.wheel_resistance,
                 chassis_param.error_compensation, chassis_param.gravity,
-                chassis_param.length,
-                chassis_param.width,
+                chassis_param.length, chassis_param.width,
                 chassis_param.rotor_speed_scale,
                 chassis_param.rotor_omega_min_scale,
                 chassis_param.rotor_buffer_low_j,
@@ -280,6 +284,14 @@ class Chassis : public LibXR::Application {
                             callback);
     chassis_event_.Register(static_cast<uint32_t>(ChassisMode::FOLLOW),
                             callback);
+    /*
+     * TRACK_START 只属于麦轮
+     * 编译期判断可以让 Omni 和 Helm 继续使用各自的枚举
+     */
+    if constexpr (std::is_same<ChassisType, Mecanum>::value) {
+      chassis_event_.Register(static_cast<uint32_t>(ChassisMode::TRACK_START),
+                              callback);
+    }
   }
 
   /**
