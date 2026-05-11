@@ -282,6 +282,8 @@ class Omni {
     mutex_.Lock();
     const ChassisMode NEXT_MODE = static_cast<ChassisMode>(mode);
     chassis_event_ = NEXT_MODE;
+    ui_text_initialized_ = false;
+    ui_refresh_tick_ = UI_MODE_TEXT_TICK;
     pid_omega_.Reset();
     pid_velocity_x_.Reset();
     pid_velocity_y_.Reset();
@@ -745,17 +747,53 @@ class Omni {
   static constexpr uint16_t UI_ROUTE_HALF_GAP = 55;
   static constexpr uint16_t UI_DEFAULT_WIDTH = 1;
   static constexpr uint16_t UI_CHAR_WIDTH = 2;
-  static constexpr uint16_t UI_ROUTE_WIDTH = UI_DEFAULT_WIDTH * 5;
-  char ui_last_mode_text_[5] = {0};  // "RELX" / "INDP" / "ROTO" / "FOLW"
+  static constexpr uint16_t UI_FONT_SIZE = 20;
+  // 左下区域底盘模式文字的位置。
+  static constexpr uint16_t UI_MODE_TEXT_X = 160;
+  static constexpr uint16_t UI_MODE_TEXT_Y = 700;
+  // 左侧电容外框的位置和尺寸。
+  static constexpr uint16_t UI_CAP_BOX_X1 = 160;
+  static constexpr uint16_t UI_CAP_BOX_Y1 = 612;
+  static constexpr uint16_t UI_CAP_BOX_X2 = 320;
+  static constexpr uint16_t UI_CAP_BOX_Y2 = 640;
+  static constexpr uint16_t UI_CAP_BOX_WIDTH = 2;
+  // 电容能量填充条使用的内边距和线宽。
+  static constexpr uint16_t UI_CAP_FILL_MARGIN = 4;
+  static constexpr uint16_t UI_CAP_FILL_WIDTH = 8;
+  // 中间外框的位置和尺寸。当前代码只绘制外框，没有在框内绘制模式文字。
+  static constexpr uint16_t UI_STATUS_BOX_X1 = 780;
+  static constexpr uint16_t UI_STATUS_BOX_Y1 = 360;
+  static constexpr uint16_t UI_STATUS_BOX_X2 = 1200;
+  static constexpr uint16_t UI_STATUS_BOX_Y2 = 760;
+  static constexpr uint16_t UI_STATUS_BOX_WIDTH = 4;
+  // 中间外框左右两侧引导斜线的线宽与端点坐标。
+  static constexpr uint16_t UI_STATUS_GUIDE_WIDTH = 4;
+  static constexpr uint16_t UI_STATUS_GUIDE_LEFT_X1 = 120;
+  static constexpr uint16_t UI_STATUS_GUIDE_LEFT_Y1 = 120;
+  static constexpr uint16_t UI_STATUS_GUIDE_LEFT_X2 = 560;
+  static constexpr uint16_t UI_STATUS_GUIDE_LEFT_Y2 = 380;
+  static constexpr uint16_t UI_STATUS_GUIDE_RIGHT_X1 = 1800;
+  static constexpr uint16_t UI_STATUS_GUIDE_RIGHT_Y1 = 120;
+  static constexpr uint16_t UI_STATUS_GUIDE_RIGHT_X2 = 1320;
+  static constexpr uint16_t UI_STATUS_GUIDE_RIGHT_Y2 = 380;
+  // 底盘 UI 定时器刷新周期，以及外框/引导线的分时重发节奏。
+  static constexpr uint32_t UI_REFRESH_PERIOD_MS = 100;
+  static constexpr uint32_t UI_BOX_RESEND_DIV = 10;
+  static constexpr uint32_t UI_GUIDE_RESEND_OFFSET = 1;
+  static constexpr uint32_t UI_MODE_TEXT_TICK = 3;
+  static constexpr uint32_t UI_TEXT_READD_DIV = 10;
+  static constexpr uint32_t UI_CAP_FILL_REFRESH_DIV = 5;
+  static constexpr uint32_t UI_CAP_FILL_REFRESH_OFFSET = 2;
+  // 电容条低频重建周期 客户端丢图后靠 ADD 补回来
+  static constexpr uint32_t UI_CAP_FILL_READD_DIV = 50;
 
-  // 裁判系统客户端 ID 与机器人 ID 的映射关系。
-  static uint16_t GetClientID(uint16_t robot_id) {
-    /* 蓝方 */
-    if (robot_id > 100) {
-      return static_cast<uint16_t>(robot_id - 101 + 0x0165);
-    }
-    /* 红方 */
-    return static_cast<uint16_t>(robot_id + 0x0100);
+  static void ResetModeUILocked(Omni* omni) {
+    omni->ui_text_initialized_ = false;
+    omni->ui_frame_initialized_ = false;
+    omni->ui_guide_initialized_ = false;
+    omni->ui_cap_fill_initialized_ = false;
+    omni->ui_layer_cleared_ = false;
+    omni->ui_refresh_tick_ = 0;
   }
 
   // 图元名固定为 3 字节，不足补空格，便于后续按名称 MODIFY。
@@ -959,8 +997,41 @@ class Omni {
         break;
     }
 
-    char mode_text[5] = {0};
-    snprintf(mode_text, sizeof(mode_text), "%s", mode_str);
+    if ((UI_TICK % UI_CAP_FILL_REFRESH_DIV) == UI_CAP_FILL_REFRESH_OFFSET) {
+      Referee::UIFigure cap_fill_fig{};
+      const bool REBUILD_CAP_FILL =
+          !UI_CAP_FILL_INITIALIZED || (UI_TICK % UI_CAP_FILL_READD_DIV) == 2;
+      // 单独更新电容框内部的能量填充条
+      const uint16_t INNER_X1 = UI_CAP_BOX_X1 + UI_CAP_FILL_MARGIN;
+      const uint16_t INNER_Y1 = UI_CAP_BOX_Y1 + UI_CAP_FILL_MARGIN;
+      const uint16_t INNER_Y2 = UI_CAP_BOX_Y2 - UI_CAP_FILL_MARGIN;
+      uint16_t inner_x2 = INNER_X1;
+      if (CAP_ONLINE) {
+        const float CLAMPED_CAP_ENERGY = std::clamp(CAP_ENERGY, 0.0f, 1.0f);
+        const float INNER_WIDTH = static_cast<float>(
+            (UI_CAP_BOX_X2 - UI_CAP_BOX_X1) - (UI_CAP_FILL_MARGIN * 2));
+        inner_x2 = static_cast<uint16_t>(
+            INNER_X1 + std::lround(INNER_WIDTH * CLAMPED_CAP_ENERGY));
+        inner_x2 = std::clamp(
+            inner_x2, INNER_X1,
+            static_cast<uint16_t>(UI_CAP_BOX_X2 - UI_CAP_FILL_MARGIN));
+      }
+      omni->referee_->FillRect(
+          cap_fill_fig, "CPI",
+          REBUILD_CAP_FILL ? Referee::UIFigureOp::UI_OP_ADD
+                           : Referee::UIFigureOp::UI_OP_MODIFY,
+          UI_LAYER_CHASSIS,
+          CAP_ONLINE ? Referee::UIColor::UI_COLOR_WHITE
+                     : Referee::UIColor::UI_COLOR_BLACK,
+          UI_CAP_FILL_WIDTH, INNER_X1, INNER_Y1, inner_x2, INNER_Y2);
+      if (omni->referee_->SendUIFigure(ROBOT_ID, CLIENT_ID, cap_fill_fig) ==
+          LibXR::ErrorCode::OK) {
+        omni->mutex_.Lock();
+        omni->ui_cap_fill_initialized_ = true;
+        omni->mutex_.Unlock();
+      }
+      return;
+    }
 
     // ===== 选择 ADD / MODIFY =====
     Referee::UIFigureOp op = omni->ui_initialized_
@@ -972,7 +1043,19 @@ class Omni {
                   Referee::UIColor::UI_COLOR_CYAN, 20, UI_CHAR_WIDTH, 160, 550,
                   mode_text);
 
-    if (omni->referee_->SendUICharacter(omni->id, client, char_fig) ==
+    Referee::UICharacter mode_fig{};
+    char mode_text[16]{};
+    FormatModeText(mode_text, MODE);
+    const bool REBUILD_MODE_TEXT =
+        !UI_TEXT_INITIALIZED || (UI_TICK % UI_TEXT_READD_DIV) == 4;
+    // 底盘模式文字本体。
+    omni->referee_->FillCharacter(
+        mode_fig, "CMT",
+        REBUILD_MODE_TEXT ? Referee::UIFigureOp::UI_OP_ADD
+                          : Referee::UIFigureOp::UI_OP_MODIFY,
+        UI_LAYER_CHASSIS, Referee::UIColor::UI_COLOR_CYAN, UI_FONT_SIZE,
+        UI_CHAR_WIDTH, UI_MODE_TEXT_X, UI_MODE_TEXT_Y, mode_text);
+    if (omni->referee_->SendUICharacter(ROBOT_ID, CLIENT_ID, mode_fig) ==
         LibXR::ErrorCode::OK) {
       memcpy(omni->ui_last_mode_text_, mode_text, sizeof(mode_text));
       omni->ui_initialized_ = true;
