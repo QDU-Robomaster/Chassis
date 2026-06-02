@@ -35,7 +35,7 @@ depends: []
   52437.5f /* 3508转子扭矩转化为电机控制单位的比例 */
 
 #define MECANUM_MOTOR_MAX_OMEGA 52.0f     /* 麦轮输出轴最大角速度 rad/s */
-#define MECANUM_CHASSIS_MAX_POWER 400     /* 麦轮默认功率上限 W */
+#define MECANUM_CHASSIS_MAX_POWER 70      /* 麦轮默认功率上限 W */
 #define TRACK_MAX_LINEAR_SPEED_MPS 0.409f /* 履带最大线速度 m/s */
 
 template <typename ChassisType>
@@ -201,6 +201,11 @@ class Mecanum {
 
     cmd_->GetEvent().Register(CMD::CMD_EVENT_START_CTRL, start_ctrl_callback);
     cmd_->GetEvent().Register(CMD::CMD_EVENT_LOST_CTRL, lost_ctrl_callback);
+
+    void (*InitUi)(Mecanum*) = [](Mecanum* mecanum) { mecanum->InitUi(); };
+    auto InitUi_ = LibXR::Timer::CreateTask(InitUi, this, 52);
+    LibXR::Timer::Add(InitUi_);
+    LibXR::Timer::Start(InitUi_);
   }
 
   /**
@@ -732,9 +737,96 @@ class Mecanum {
       track_motor_->Relax();
     }
   }
-#ifdef DEBUG
-  int DebugCommand(int argc, char** argv);
-#endif
+  void InitUi() {
+    const uint16_t id = referee_->GetRobotID();
+    const uint16_t client = referee_->GetClientID(id);
+    Referee::UIFigureOp ADD_OP = Referee::UIFigureOp::UI_OP_MODIFY;
+    if (this->ui_dyn_step_ % 4 == 0) {
+      ADD_OP = Referee::UIFigureOp::UI_OP_ADD;
+      ui_dyn_step_ = 0;
+    }
+
+    switch (ui_step_) {
+      case 0: {
+        // 根据麦轮底盘的模式映射来显示UI
+        const char* mode_str = "RELX";
+        // 麦轮底盘模式: RELAX, INDEPENDENT, ROTOR, FOLLOW
+        switch (chassis_event_) {
+          case ChassisMode::RELAX:
+            mode_str = "RELX";  // 对应麦轮的 RELAX
+            current_mode_ = ChassisMode::RELAX;
+            break;
+          case ChassisMode::FOLLOW:
+            mode_str = "FOLW";  // 对应麦轮的 FOLLOW
+            current_mode_ = ChassisMode::FOLLOW;
+            break;
+          case ChassisMode::ROTOR:
+            mode_str = "ROTO";  // 对应麦轮的 ROTOR
+            current_mode_ = ChassisMode::ROTOR;
+            break;
+          case ChassisMode::TRACK_START:
+            mode_str = "TRAC";
+            current_mode_ = ChassisMode::TRACK_START;
+          default:
+            mode_str = "RELX";
+            current_mode_ = ChassisMode::RELAX;
+            break;
+        }
+        if (current_mode_ != last_ui_mode_ or
+            ADD_OP == Referee::UIFigureOp::UI_OP_ADD) {
+          Referee::UICharacter char_fig{};
+          referee_->FillCharacter(char_fig, "WM", ADD_OP, 1,
+                                  Referee::UIColor::UI_COLOR_CYAN, 27, 2, 1345,
+                                  764, mode_str);
+          referee_->SendUICharacter(id, client, char_fig);
+          last_ui_mode_ = current_mode_;
+        }
+        break;
+      }
+      case 1: {
+        if (ADD_OP == Referee::UIFigureOp::UI_OP_ADD) {
+          Referee::UIFigure line_fig{};
+          referee_->FillLine(line_fig, "WSL", ADD_OP, 1,
+                             Referee::UIColor::UI_COLOR_CYAN, 2, 0, 0, 400,
+                             1000);
+          referee_->SendUIFigure(id, client, line_fig);
+        }
+        break;
+      }
+      case 3: {
+        if (ADD_OP == Referee::UIFigureOp::UI_OP_ADD) {
+          Referee::UIFigure line_fig{};
+          referee_->FillLine(line_fig, "WSR", ADD_OP, 1,
+                             Referee::UIColor::UI_COLOR_CYAN, 2, 1920, 0, 1520,
+                             1000);
+          referee_->SendUIFigure(id, client, line_fig);
+        }
+        break;
+      }
+      case 2: {
+        Referee::UIFigure spfig{};
+        Referee::UIColor cap_state;
+
+        float cap_energy = power_control_->GetCapEnergy();
+        if (cap_energy < 0.35f) {
+          cap_state = Referee::UIColor::UI_COLOR_ORANGE;
+          this->cnt_low++;
+        } else {
+          cap_state = Referee::UIColor::UI_COLOR_CYAN;
+          this->cnt_high++;
+        }
+        this->cap_ener = cap_energy;
+        referee_->FillLine(spfig, "MSP", ADD_OP, 1, cap_state, 20, 50, 550,
+                           static_cast<uint16_t>(100 + 450 * cap_energy), 550);
+        referee_->SendUIFigure(id, client, spfig);
+        this->ui_dyn_step_ = (this->ui_dyn_step_ + 1) % 20;
+      }
+      default:
+        break;
+    }
+
+    this->ui_step_ = (this->ui_step_ + 1) % 4;
+  }
 
  private:
   /* 履带模式使用完整遥控行程，避免目标速度被额外压低 */
@@ -841,4 +933,14 @@ class Mecanum {
 
   ChassisMode chassis_event_ = ChassisMode::RELAX;
   Referee* referee_;
+
+  uint16_t ui_step_ = 0;
+  uint16_t ui_dyn_step_ = 0;
+  ChassisMode current_mode_ = ChassisMode::RELAX;
+  ChassisMode last_ui_mode_ = ChassisMode::RELAX;
+  LibXR::MillisecondTimestamp ui_update_time_ = 0;
+
+  uint16_t cnt_high = 0;
+  uint16_t cnt_low = 0;
+  float cap_ener = 0.0f;
 };

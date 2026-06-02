@@ -205,7 +205,7 @@ class Omni {
         "gimbal_euler");
     LibXR::Topic::ASyncSubscriber<float> yawmotor_angle_suber("yawmotor_angle");
     LibXR::Topic::ASyncSubscriber<float> pitchmotor_angle_suber(
-        "rollmotor_angle");
+        "pitchmotor_angle");
 
     cmd_suber.StartWaiting();
     referee_suber.StartWaiting();
@@ -231,9 +231,9 @@ class Omni {
       if (euler_suber.Available()) {
         omni->euler_ = euler_suber.GetData();
         euler_suber.StartWaiting();
-        omni->imu_pitch_ = (omni->euler_.Roll());
-        omni->imu_roll_ = -(omni->euler_.Pitch());
-        omni->imu_yaw_ = -(omni->euler_.Yaw());
+        omni->imu_pitch_ = -(omni->euler_.Pitch());
+        omni->imu_roll_ = -(omni->euler_.Roll());
+        omni->imu_yaw_ = (omni->euler_.Yaw());
       }
 
       if (yawmotor_angle_suber.Available()) {
@@ -740,7 +740,10 @@ class Omni {
   static constexpr uint16_t UI_FONT_SIZE = 20;
   /* 左下区域底盘模式文字位置 */
   static constexpr uint16_t UI_MODE_TEXT_X = 160;
-  static constexpr uint16_t UI_MODE_TEXT_Y = 700;
+  static constexpr uint16_t UI_MODE_TEXT_Y = 725;
+  /* 左下区域 AI 模式文字位置 */
+  static constexpr uint16_t UI_AI_TEXT_X = 160;
+  static constexpr uint16_t UI_AI_TEXT_Y = 675;
   /* 左侧电容外框位置和尺寸 */
   static constexpr uint16_t UI_CAP_BOX_X1 = 160;
   static constexpr uint16_t UI_CAP_BOX_Y1 = 612;
@@ -758,21 +761,24 @@ class Omni {
   static constexpr uint16_t UI_STATUS_BOX_WIDTH = 4;
   /* 中间外框左右两侧引导斜线的线宽与端点坐标 */
   static constexpr uint16_t UI_STATUS_GUIDE_WIDTH = 4;
-  static constexpr uint16_t UI_STATUS_GUIDE_LEFT_X1 = 120;
-  static constexpr uint16_t UI_STATUS_GUIDE_LEFT_Y1 = 120;
-  static constexpr uint16_t UI_STATUS_GUIDE_LEFT_X2 = 560;
-  static constexpr uint16_t UI_STATUS_GUIDE_LEFT_Y2 = 380;
-  static constexpr uint16_t UI_STATUS_GUIDE_RIGHT_X1 = 1800;
-  static constexpr uint16_t UI_STATUS_GUIDE_RIGHT_Y1 = 120;
-  static constexpr uint16_t UI_STATUS_GUIDE_RIGHT_X2 = 1320;
-  static constexpr uint16_t UI_STATUS_GUIDE_RIGHT_Y2 = 380;
+  static constexpr uint16_t UI_STATUS_GUIDE_LEFT_X1 = 493;
+  static constexpr uint16_t UI_STATUS_GUIDE_LEFT_Y1 = 199;
+  static constexpr uint16_t UI_STATUS_GUIDE_LEFT_X2 = 913;
+  static constexpr uint16_t UI_STATUS_GUIDE_LEFT_Y2 = 471;
+  static constexpr uint16_t UI_STATUS_GUIDE_RIGHT_X1 = 1427;
+  static constexpr uint16_t UI_STATUS_GUIDE_RIGHT_Y1 = 199;
+  static constexpr uint16_t UI_STATUS_GUIDE_RIGHT_X2 = 1007;
+  static constexpr uint16_t UI_STATUS_GUIDE_RIGHT_Y2 = 471;
   /* 底盘 UI 刷新周期和分时重发节奏 */
   static constexpr uint32_t UI_REFRESH_PERIOD_MS = 100;
   static constexpr uint32_t UI_BOX_RESEND_DIV = 10;
   static constexpr uint32_t UI_GUIDE_RESEND_OFFSET = 1;
   static constexpr uint32_t UI_MODE_TEXT_TICK = 3;
+  static constexpr uint32_t UI_AI_TEXT_TICK = 0;
   static constexpr uint32_t UI_TEXT_READD_DIV = 10;
-  static constexpr uint32_t UI_CAP_FILL_REFRESH_DIV = 5;
+  static constexpr uint32_t UI_AI_TEXT_REFRESH_DIV = 3;
+  static constexpr uint32_t UI_AI_TEXT_READD_DIV = 37;
+  static constexpr uint32_t UI_CAP_FILL_REFRESH_DIV = 3;
   static constexpr uint32_t UI_CAP_FILL_REFRESH_OFFSET = 2;
   /* 电容条低频重建周期, 客户端丢图后靠 ADD 补回来 */
   static constexpr uint32_t UI_CAP_FILL_READD_DIV = 50;
@@ -782,6 +788,7 @@ class Omni {
     omni->ui_frame_initialized_ = false;
     omni->ui_guide_initialized_ = false;
     omni->ui_cap_fill_initialized_ = false;
+    omni->ui_ai_text_initialized_ = false;
     omni->ui_layer_cleared_ = false;
     omni->ui_refresh_tick_ = 0;
   }
@@ -805,6 +812,15 @@ class Omni {
     std::snprintf(text, sizeof(text), "%s", GetModeText(mode));
   }
 
+  static const char* GetAIModeText(bool enabled) {
+    return enabled ? "AI ON" : "AI OFF";
+  }
+
+  static Referee::UIColor GetAIModeColor(bool enabled) {
+    return enabled ? Referee::UIColor::UI_COLOR_YELLOW
+                   : Referee::UIColor::UI_COLOR_ORANGE;
+  }
+
   static void DrawUI(Omni* omni) {
     if (omni->referee_ == nullptr) {
       return;
@@ -821,8 +837,12 @@ class Omni {
     const bool UI_FRAME_INITIALIZED = omni->ui_frame_initialized_;
     const bool UI_GUIDE_INITIALIZED = omni->ui_guide_initialized_;
     const bool UI_CAP_FILL_INITIALIZED = omni->ui_cap_fill_initialized_;
+    const bool UI_AI_TEXT_INITIALIZED = omni->ui_ai_text_initialized_;
     const bool UI_LAYER_CLEARED = omni->ui_layer_cleared_;
     const uint32_t UI_TICK = omni->ui_refresh_tick_++;
+    const bool AI_MODE_ENABLED =
+        omni->cmd_ != nullptr &&
+        omni->cmd_->GetCtrlMode() == CMD::Mode::CMD_AUTO_CTRL;
     const bool CAP_ONLINE =
         omni->power_control_ != nullptr && omni->power_control_->IsOnline();
     const float CAP_ENERGY = omni->power_control_ != nullptr
@@ -912,20 +932,46 @@ class Omni {
       /* 左右两侧的引导斜线 */
       omni->referee_->FillLine(guide_figs.interaction_figure[0], "GLF",
                                Referee::UIFigureOp::UI_OP_ADD, UI_LAYER_CHASSIS,
-                               Referee::UIColor::UI_COLOR_CYAN,
+                               Referee::UIColor::UI_COLOR_GREEN,
                                UI_STATUS_GUIDE_WIDTH, UI_STATUS_GUIDE_LEFT_X1,
                                UI_STATUS_GUIDE_LEFT_Y1, UI_STATUS_GUIDE_LEFT_X2,
                                UI_STATUS_GUIDE_LEFT_Y2);
       omni->referee_->FillLine(
           guide_figs.interaction_figure[1], "GRI",
           Referee::UIFigureOp::UI_OP_ADD, UI_LAYER_CHASSIS,
-          Referee::UIColor::UI_COLOR_CYAN, UI_STATUS_GUIDE_WIDTH,
+          Referee::UIColor::UI_COLOR_GREEN, UI_STATUS_GUIDE_WIDTH,
           UI_STATUS_GUIDE_RIGHT_X1, UI_STATUS_GUIDE_RIGHT_Y1,
           UI_STATUS_GUIDE_RIGHT_X2, UI_STATUS_GUIDE_RIGHT_Y2);
       if (omni->referee_->SendUIFigure2(ROBOT_ID, CLIENT_ID, guide_figs) ==
           LibXR::ErrorCode::OK) {
         omni->mutex_.Lock();
         omni->ui_guide_initialized_ = true;
+        omni->mutex_.Unlock();
+      }
+      return;
+    }
+
+    const bool REBUILD_AI_TEXT =
+        !UI_AI_TEXT_INITIALIZED ||
+        (UI_AI_TEXT_INITIALIZED && UI_TICK >= UI_AI_TEXT_READD_DIV &&
+         (UI_TICK % UI_AI_TEXT_READD_DIV) == UI_AI_TEXT_TICK);
+    const bool UPDATE_AI_TEXT =
+        REBUILD_AI_TEXT ||
+        (UI_TICK % UI_AI_TEXT_REFRESH_DIV) == UI_AI_TEXT_TICK;
+    if (UPDATE_AI_TEXT) {
+      Referee::UICharacter ai_fig{};
+      /* AI 模式开关状态文字 */
+      omni->referee_->FillCharacter(
+          ai_fig, "AIM",
+          REBUILD_AI_TEXT ? Referee::UIFigureOp::UI_OP_ADD
+                          : Referee::UIFigureOp::UI_OP_MODIFY,
+          UI_LAYER_CHASSIS, GetAIModeColor(AI_MODE_ENABLED), UI_FONT_SIZE,
+          UI_CHAR_WIDTH, UI_AI_TEXT_X, UI_AI_TEXT_Y,
+          GetAIModeText(AI_MODE_ENABLED));
+      if (omni->referee_->SendUICharacter(ROBOT_ID, CLIENT_ID, ai_fig) ==
+          LibXR::ErrorCode::OK) {
+        omni->mutex_.Lock();
+        omni->ui_ai_text_initialized_ = true;
         omni->mutex_.Unlock();
       }
       return;
@@ -941,7 +987,7 @@ class Omni {
         mode_fig, "CMT",
         REBUILD_MODE_TEXT ? Referee::UIFigureOp::UI_OP_ADD
                           : Referee::UIFigureOp::UI_OP_MODIFY,
-        UI_LAYER_CHASSIS, Referee::UIColor::UI_COLOR_CYAN, UI_FONT_SIZE,
+        UI_LAYER_CHASSIS, Referee::UIColor::UI_COLOR_PINK, UI_FONT_SIZE,
         UI_CHAR_WIDTH, UI_MODE_TEXT_X, UI_MODE_TEXT_Y, mode_text);
     if (omni->referee_->SendUICharacter(ROBOT_ID, CLIENT_ID, mode_fig) ==
         LibXR::ErrorCode::OK) {
@@ -1045,6 +1091,7 @@ class Omni {
   bool ui_frame_initialized_ = false;
   bool ui_guide_initialized_ = false;
   bool ui_cap_fill_initialized_ = false;
+  bool ui_ai_text_initialized_ = false;
   bool ui_layer_cleared_ = false;
   uint32_t ui_refresh_tick_ = 0;
   LibXR::Timer::TimerHandle timer_ui_{};
