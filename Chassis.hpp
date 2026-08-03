@@ -4,17 +4,17 @@
 /* === MODULE MANIFEST V2 ===
 module_description: No description provided
 constructor_args:
-  - motor_wheel_0: '@&motor_wheel_0'
-  - motor_wheel_1: '@&motor_wheel_1'
-  - motor_wheel_2: '@&motor_wheel_2'
-  - motor_wheel_3: '@&motor_wheel_3'
-  - motor_steer_0: '@&motor_steer_0'
-  - motor_steer_1: '@&motor_steer_1'
-  - motor_steer_2: '@&motor_steer_2'
-  - motor_steer_3: '@&motor_steer_3'
-  - cmd: '@&cmd'
-  - power_control: '@&power_control'
-  - referee: '@&ref'
+  - motor_wheel_0: '@nullptr'
+  - motor_wheel_1: '@nullptr'
+  - motor_wheel_2: '@nullptr'
+  - motor_wheel_3: '@nullptr'
+  - motor_steer_0: '@nullptr'
+  - motor_steer_1: '@nullptr'
+  - motor_steer_2: '@nullptr'
+  - motor_steer_3: '@nullptr'
+  - cmd: '@nullptr'
+  - power_control: '@nullptr'
+  - referee: '@nullptr'
   - task_stack_depth: 1536
   - ChassisParam:
       wheel_radius: 0.065
@@ -24,8 +24,8 @@ constructor_args:
       wheel_resistance: 0.0
       error_compensation: 0.0
       gravity: 230
-      length = 0.0f;
-      width = 0.0f;
+      length: 0.0
+      width: 0.0
       rotor_speed_scale: 0.95
       rotor_omega_min_scale: 0.55
       rotor_buffer_low_j: 35.0
@@ -168,14 +168,17 @@ required_hardware:
   - can
   - bmi088
 depends:
-  - qdu-future/BMI088
+  - xrobot-org/BMI088
   - qdu-future/RMMotor
   - qdu-future/CMD
+  - qdu-future/PowerControl
+  - qdu-future/Referee
   - xrobot-org/MadgwickAHRS
 === END MANIFEST === */
 // clang-format on
 
 #include <cstdint>
+#include <optional>
 #include <type_traits>
 
 /* 功率控制数组按当前最大底盘需求预留 */
@@ -245,28 +248,44 @@ class Chassis : public LibXR::Application {
       LibXR::PID<float>::Param pid_steer_speed_2_ = {},
       LibXR::PID<float>::Param pid_steer_speed_3_ = {},
       LibXR::Thread::Priority thread_priority = LibXR::Thread::Priority::HIGH)
-      : chassis_(
-            hw, app, motor_wheel_0, motor_wheel_1, motor_wheel_2, motor_wheel_3,
-            motor_steer_0, motor_steer_1, motor_steer_2, motor_steer_3, cmd,
-            power_control, referee, task_stack_depth,
-            typename ChassisType::ChassisParam{
-                chassis_param.wheel_radius, chassis_param.wheel_to_center,
-                chassis_param.gravity_height, chassis_param.reduction_ratio,
-                chassis_param.wheel_resistance,
-                chassis_param.error_compensation, chassis_param.gravity,
-                chassis_param.length, chassis_param.width,
-                chassis_param.rotor_speed_scale,
-                chassis_param.rotor_omega_min_scale,
-                chassis_param.rotor_buffer_low_j,
-                chassis_param.rotor_buffer_high_j,
-                chassis_param.rotor_scale_lpf_alpha},
-            pid_follow_, pid_velocity_x_, pid_velocity_y_, pid_omega_,
-            pid_wheel_speed_0_, pid_wheel_speed_1_, pid_wheel_speed_2_,
-            pid_wheel_speed_3_, pid_steer_angle_0_, pid_steer_angle_1_,
-            pid_steer_angle_2_, pid_steer_angle_3_, pid_steer_speed_0_,
-            pid_steer_speed_1_, pid_steer_speed_2_, pid_steer_speed_3_,
-            thread_priority),
-        referee_(referee) {
+      : referee_(referee) {
+    ASSERT(motor_wheel_0 != nullptr);
+    ASSERT(motor_wheel_1 != nullptr);
+    ASSERT(motor_wheel_2 != nullptr);
+    ASSERT(motor_wheel_3 != nullptr);
+    ASSERT(cmd != nullptr);
+    ASSERT(power_control != nullptr);
+
+    if constexpr (std::is_same<ChassisType, Helm>::value) {
+      ASSERT(motor_steer_0 != nullptr);
+      ASSERT(motor_steer_1 != nullptr);
+      ASSERT(motor_steer_2 != nullptr);
+      ASSERT(motor_steer_3 != nullptr);
+    } else if constexpr (std::is_same<ChassisType, Mecanum>::value) {
+      ASSERT(referee != nullptr);
+    }
+
+    chassis_.emplace(
+        hw, app, motor_wheel_0, motor_wheel_1, motor_wheel_2, motor_wheel_3,
+        motor_steer_0, motor_steer_1, motor_steer_2, motor_steer_3, cmd,
+        power_control, referee, task_stack_depth,
+        typename ChassisType::ChassisParam{
+            chassis_param.wheel_radius, chassis_param.wheel_to_center,
+            chassis_param.gravity_height, chassis_param.reduction_ratio,
+            chassis_param.wheel_resistance, chassis_param.error_compensation,
+            chassis_param.gravity, chassis_param.length, chassis_param.width,
+            chassis_param.rotor_speed_scale,
+            chassis_param.rotor_omega_min_scale,
+            chassis_param.rotor_buffer_low_j,
+            chassis_param.rotor_buffer_high_j,
+            chassis_param.rotor_scale_lpf_alpha},
+        pid_follow_, pid_velocity_x_, pid_velocity_y_, pid_omega_,
+        pid_wheel_speed_0_, pid_wheel_speed_1_, pid_wheel_speed_2_,
+        pid_wheel_speed_3_, pid_steer_angle_0_, pid_steer_angle_1_,
+        pid_steer_angle_2_, pid_steer_angle_3_, pid_steer_speed_0_,
+        pid_steer_speed_1_, pid_steer_speed_2_, pid_steer_speed_3_,
+        thread_priority);
+
     auto callback = LibXR::Callback<uint32_t>::Create(
         [](bool in_isr, Chassis* chassis, uint32_t event_id) {
           UNUSED(in_isr);
@@ -305,12 +324,15 @@ class Chassis : public LibXR::Application {
    * @brief 事件处理器，根据传入的事件ID执行相应操作
    * @param event_id 触发的事件ID
    */
-  void EventHandler(uint32_t event_id) { chassis_.SetMode(event_id); }
+  void EventHandler(uint32_t event_id) {
+    ASSERT(chassis_.has_value());
+    chassis_->SetMode(event_id);
+  }
 
   void OnMonitor() override {}
 
  private:
-  ChassisType chassis_;
+  std::optional<ChassisType> chassis_;
   LibXR::Event chassis_event_;
   Referee* referee_;
 };
