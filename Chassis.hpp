@@ -3,185 +3,36 @@
 // clang-format off
 /* === MODULE MANIFEST V2 ===
 module_description: No description provided
-constructor_args:
-  - motor_wheel_0: '@&motor_wheel_0'
-  - motor_wheel_1: '@&motor_wheel_1'
-  - motor_wheel_2: '@&motor_wheel_2'
-  - motor_wheel_3: '@&motor_wheel_3'
-  - motor_steer_0: '@&motor_steer_0'
-  - motor_steer_1: '@&motor_steer_1'
-  - motor_steer_2: '@&motor_steer_2'
-  - motor_steer_3: '@&motor_steer_3'
-  - cmd: '@&cmd'
-  - power_control: '@&power_control'
-  - referee: '@&ref'
-  - task_stack_depth: 1536
-  - ChassisParam:
-      wheel_radius: 0.065
-      wheel_to_center: 0.26
-      gravity_height: 0.0
-      reduction_ratio: 15.7647
-      wheel_resistance: 0.0
-      error_compensation: 0.0
-      gravity: 230
-      length = 0.0f;
-      width = 0.0f;
-      rotor_speed_scale: 0.95
-      rotor_omega_min_scale: 0.55
-      rotor_buffer_low_j: 35.0
-      rotor_buffer_high_j: 70.0
-      rotor_scale_lpf_alpha: 0.2
-  - pid_follow_:
-      k: 1.0
-      p: 20.0
-      i: 0.0
-      d: 0.0
-      i_limit: 0.0
-      out_limit: 30.0
-      cycle: true
-  - pid_velocity_x_:
-      k: 1.0
-      p: 20.0
-      i: 0.0
-      d: 0.0
-      i_limit: 0.0
-      out_limit: 30.0
-      cycle: false
-  - pid_velocity_y_:
-      k: 1.0
-      p: 20.0
-      i: 0.0
-      d: 0.0
-      i_limit: 0.0
-      out_limit: 30.0
-      cycle: false
-  - pid_omega_:
-      k: 1.0
-      p: 20.0
-      i: 0.0
-      d: 0.0
-      i_limit: 0.0
-      out_limit: 30.0
-      cycle: false
-  - pid_wheel_speed_0_:
-      k: 1.0
-      p: 0.3
-      i: 0.0
-      d: 0.0
-      i_limit: 0.0
-      out_limit: 5.0
-      cycle: false
-  - pid_wheel_speed_1_:
-      k: 1.0
-      p: 0.3
-      i: 0.0
-      d: 0.0
-      i_limit: 0.0
-      out_limit: 5.0
-      cycle: false
-  - pid_wheel_speed_2_:
-      k: 1.0
-      p: 0.3
-      i: 0.0
-      d: 0.0
-      i_limit: 0.0
-      out_limit: 5.0
-      cycle: false
-  - pid_wheel_speed_3_:
-      k: 1.0
-      p: 0.3
-      i: 0.0
-      d: 0.0
-      i_limit: 0.0
-      out_limit: 5.0
-      cycle: false
-  - pid_steer_angle_0_:
-      k: 1.0
-      p: 0.0
-      i: 0.0
-      d: 0.0
-      i_limit: 0.0
-      out_limit: 0.0
-      cycle: false
-  - pid_steer_angle_1_:
-      k: 1.0
-      p: 0.0
-      i: 0.0
-      d: 0.0
-      i_limit: 0.0
-      out_limit: 0.0
-      cycle: false
-  - pid_steer_angle_2_:
-      k: 1.0
-      p: 0.0
-      i: 0.0
-      d: 0.0
-      i_limit: 0.0
-      out_limit: 0.0
-      cycle: false
-  - pid_steer_angle_3_:
-      k: 1.0
-      p: 0.0
-      i: 0.0
-      d: 0.0
-      i_limit: 0.0
-      out_limit: 0.0
-      cycle: false
-  - pid_steer_speed_0_:
-      k: 1.0
-      p: 0.0
-      i: 0.0
-      d: 0.0
-      i_limit: 0.0
-      out_limit: 0.0
-      cycle: false
-  - pid_steer_speed_1_:
-      k: 1.0
-      p: 0.0
-      i: 0.0
-      d: 0.0
-      i_limit: 0.0
-      out_limit: 0.0
-      cycle: false
-  - pid_steer_speed_2_:
-      k: 1.0
-      p: 0.0
-      i: 0.0
-      d: 0.0
-      i_limit: 0.0
-      out_limit: 0.0
-      cycle: false
-  - pid_steer_speed_3_:
-      k: 1.0
-      p: 0.0
-      i: 0.0
-      d: 0.0
-      i_limit: 0.0
-      out_limit: 0.0
-      cycle: false
-  - thread_priority: LibXR::Thread::Priority::HIGH
-template_args:
-  - ChassisType: Omni
-required_hardware:
-  - dr16
-  - motor
-  - can
-  - bmi088
 depends:
-  - qdu-future/BMI088
-  - qdu-future/RMMotor
-  - qdu-future/CMD
-  - xrobot-org/MadgwickAHRS
+- id: xrobot-org/BMI088
+  ref: same-or-dev
+- id: QDU-Robomaster/RMMotor
+  ref: same-or-dev
+- id: QDU-Robomaster/CMD
+  ref: same-or-dev
+- id: QDU-Robomaster/PowerControl
+  ref: same-or-dev
+- id: QDU-Robomaster/Referee
+  ref: same-or-dev
+- id: xrobot-org/MadgwickAHRS
+  ref: same-or-dev
+- id: QDU-Robomaster/Motor
+  ref: same-or-dev
+- id: QDU-Robomaster/SuperPower
+  ref: same-or-dev
 === END MANIFEST === */
 // clang-format on
 
 #include <cstdint>
 #include <type_traits>
 
+#include "thread.hpp"
+
 /* 功率控制数组按当前最大底盘需求预留 */
 static constexpr int CHASSIS_POWER_CONTROL_MAX_MOTOR_COUNT = 6;
 
-struct MotorData {
+struct MotorData
+{
   float output_current_3508[CHASSIS_POWER_CONTROL_MAX_MOTOR_COUNT] = {};
   float rotorspeed_rpm_3508[CHASSIS_POWER_CONTROL_MAX_MOTOR_COUNT] = {};
 
@@ -196,15 +47,16 @@ struct MotorData {
 #include "Omni.hpp"
 #include "RMMotor.hpp"
 #include "Referee.hpp"
-#include "app_framework.hpp"
 #include "libxr_def.hpp"
 #include "pid.hpp"
 
 template <typename ChassisType>
-class Chassis : public LibXR::Application {
+class Chassis
+{
  public:
   using ChassisMode = typename ChassisType::ChassisMode;
-  struct ChassisParam {
+  struct ChassisParam
+  {
     float wheel_radius = 0.0f;
     float wheel_to_center = 0.0f;
     float gravity_height = 0.0f;
@@ -222,12 +74,11 @@ class Chassis : public LibXR::Application {
   };
 
   Chassis(
-      LibXR::HardwareContainer& hw, LibXR::ApplicationManager& app,
+
       Motor* motor_wheel_0, Motor* motor_wheel_1, Motor* motor_wheel_2,
       Motor* motor_wheel_3, Motor* motor_steer_0, Motor* motor_steer_1,
-      Motor* motor_steer_2, Motor* motor_steer_3, CMD* cmd,
-      PowerControl* power_control, Referee* referee, uint32_t task_stack_depth,
-      ChassisParam chassis_param = {},
+      Motor* motor_steer_2, Motor* motor_steer_3, CMD* cmd, PowerControl* power_control,
+      Referee* referee, uint32_t task_stack_depth, ChassisParam chassis_param = {},
       LibXR::PID<float>::Param pid_follow_ = {},
       LibXR::PID<float>::Param pid_velocity_x_ = {},
       LibXR::PID<float>::Param pid_velocity_y_ = {},
@@ -245,52 +96,46 @@ class Chassis : public LibXR::Application {
       LibXR::PID<float>::Param pid_steer_speed_2_ = {},
       LibXR::PID<float>::Param pid_steer_speed_3_ = {},
       LibXR::Thread::Priority thread_priority = LibXR::Thread::Priority::HIGH)
-      : chassis_(
-            hw, app, motor_wheel_0, motor_wheel_1, motor_wheel_2, motor_wheel_3,
-            motor_steer_0, motor_steer_1, motor_steer_2, motor_steer_3, cmd,
-            power_control, referee, task_stack_depth,
-            typename ChassisType::ChassisParam{
-                chassis_param.wheel_radius, chassis_param.wheel_to_center,
-                chassis_param.gravity_height, chassis_param.reduction_ratio,
-                chassis_param.wheel_resistance,
-                chassis_param.error_compensation, chassis_param.gravity,
-                chassis_param.length, chassis_param.width,
-                chassis_param.rotor_speed_scale,
-                chassis_param.rotor_omega_min_scale,
-                chassis_param.rotor_buffer_low_j,
-                chassis_param.rotor_buffer_high_j,
-                chassis_param.rotor_scale_lpf_alpha},
-            pid_follow_, pid_velocity_x_, pid_velocity_y_, pid_omega_,
-            pid_wheel_speed_0_, pid_wheel_speed_1_, pid_wheel_speed_2_,
-            pid_wheel_speed_3_, pid_steer_angle_0_, pid_steer_angle_1_,
-            pid_steer_angle_2_, pid_steer_angle_3_, pid_steer_speed_0_,
-            pid_steer_speed_1_, pid_steer_speed_2_, pid_steer_speed_3_,
-            thread_priority),
-        referee_(referee) {
+      : chassis_(motor_wheel_0, motor_wheel_1, motor_wheel_2, motor_wheel_3,
+                 motor_steer_0, motor_steer_1, motor_steer_2, motor_steer_3, cmd,
+                 power_control, referee, task_stack_depth,
+                 typename ChassisType::ChassisParam{
+                     chassis_param.wheel_radius, chassis_param.wheel_to_center,
+                     chassis_param.gravity_height, chassis_param.reduction_ratio,
+                     chassis_param.wheel_resistance, chassis_param.error_compensation,
+                     chassis_param.gravity, chassis_param.length, chassis_param.width,
+                     chassis_param.rotor_speed_scale, chassis_param.rotor_omega_min_scale,
+                     chassis_param.rotor_buffer_low_j, chassis_param.rotor_buffer_high_j,
+                     chassis_param.rotor_scale_lpf_alpha},
+                 pid_follow_, pid_velocity_x_, pid_velocity_y_, pid_omega_,
+                 pid_wheel_speed_0_, pid_wheel_speed_1_, pid_wheel_speed_2_,
+                 pid_wheel_speed_3_, pid_steer_angle_0_, pid_steer_angle_1_,
+                 pid_steer_angle_2_, pid_steer_angle_3_, pid_steer_speed_0_,
+                 pid_steer_speed_1_, pid_steer_speed_2_, pid_steer_speed_3_,
+                 thread_priority),
+        referee_(referee)
+  {
     auto callback = LibXR::Callback<uint32_t>::Create(
-        [](bool in_isr, Chassis* chassis, uint32_t event_id) {
+        [](bool in_isr, Chassis* chassis, uint32_t event_id)
+        {
           UNUSED(in_isr);
           chassis->EventHandler(event_id);
         },
         this);
 
-    chassis_event_.Register(static_cast<uint32_t>(ChassisMode::RELAX),
-                            callback);
+    chassis_event_.Register(static_cast<uint32_t>(ChassisMode::RELAX), callback);
 
-    chassis_event_.Register(static_cast<uint32_t>(ChassisMode::INDEPENDENT),
-                            callback);
+    chassis_event_.Register(static_cast<uint32_t>(ChassisMode::INDEPENDENT), callback);
 
-    chassis_event_.Register(static_cast<uint32_t>(ChassisMode::ROTOR),
-                            callback);
-    chassis_event_.Register(static_cast<uint32_t>(ChassisMode::FOLLOW),
-                            callback);
+    chassis_event_.Register(static_cast<uint32_t>(ChassisMode::ROTOR), callback);
+    chassis_event_.Register(static_cast<uint32_t>(ChassisMode::FOLLOW), callback);
     /*
      * TRACK_START 只属于麦轮
      * 编译期判断可以让 Omni 和 Helm 继续使用各自的枚举
      */
-    if constexpr (std::is_same<ChassisType, Mecanum>::value) {
-      chassis_event_.Register(static_cast<uint32_t>(ChassisMode::TRACK_START),
-                              callback);
+    if constexpr (std::is_same<ChassisType, Mecanum>::value)
+    {
+      chassis_event_.Register(static_cast<uint32_t>(ChassisMode::TRACK_START), callback);
     }
   }
 
@@ -307,7 +152,7 @@ class Chassis : public LibXR::Application {
    */
   void EventHandler(uint32_t event_id) { chassis_.SetMode(event_id); }
 
-  void OnMonitor() override {}
+  void OnMonitor() {}
 
  private:
   ChassisType chassis_;
