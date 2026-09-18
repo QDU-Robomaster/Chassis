@@ -73,47 +73,60 @@ class Chassis
     float rotor_scale_lpf_alpha = 0.2f;
   };
 
-  Chassis(
+  struct Param
+  {
+    ChassisParam chassis_param;
+    LibXR::PID<float>::Param pid_follow;
+    LibXR::PID<float>::Param pid_velocity_x;
+    LibXR::PID<float>::Param pid_velocity_y;
+    LibXR::PID<float>::Param pid_omega;
+    LibXR::PID<float>::Param pid_wheel_speed_0;
+    LibXR::PID<float>::Param pid_wheel_speed_1;
+    LibXR::PID<float>::Param pid_wheel_speed_2;
+    LibXR::PID<float>::Param pid_wheel_speed_3;
+    LibXR::PID<float>::Param pid_steer_angle_0;
+    LibXR::PID<float>::Param pid_steer_angle_1;
+    LibXR::PID<float>::Param pid_steer_angle_2;
+    LibXR::PID<float>::Param pid_steer_angle_3;
+    LibXR::PID<float>::Param pid_steer_speed_0;
+    LibXR::PID<float>::Param pid_steer_speed_1;
+    LibXR::PID<float>::Param pid_steer_speed_2;
+    LibXR::PID<float>::Param pid_steer_speed_3;
+    LibXR::Thread::Priority thread_priority;
+  };
 
-      Motor* motor_wheel_0, Motor* motor_wheel_1, Motor* motor_wheel_2,
-      Motor* motor_wheel_3, Motor* motor_steer_0, Motor* motor_steer_1,
-      Motor* motor_steer_2, Motor* motor_steer_3, CMD* cmd, PowerControl* power_control,
-      Referee* referee, uint32_t task_stack_depth, ChassisParam chassis_param = {},
-      LibXR::PID<float>::Param pid_follow_ = {},
-      LibXR::PID<float>::Param pid_velocity_x_ = {},
-      LibXR::PID<float>::Param pid_velocity_y_ = {},
-      LibXR::PID<float>::Param pid_omega_ = {},
-      LibXR::PID<float>::Param pid_wheel_speed_0_ = {},
-      LibXR::PID<float>::Param pid_wheel_speed_1_ = {},
-      LibXR::PID<float>::Param pid_wheel_speed_2_ = {},
-      LibXR::PID<float>::Param pid_wheel_speed_3_ = {},
-      LibXR::PID<float>::Param pid_steer_angle_0_ = {},
-      LibXR::PID<float>::Param pid_steer_angle_1_ = {},
-      LibXR::PID<float>::Param pid_steer_angle_2_ = {},
-      LibXR::PID<float>::Param pid_steer_angle_3_ = {},
-      LibXR::PID<float>::Param pid_steer_speed_0_ = {},
-      LibXR::PID<float>::Param pid_steer_speed_1_ = {},
-      LibXR::PID<float>::Param pid_steer_speed_2_ = {},
-      LibXR::PID<float>::Param pid_steer_speed_3_ = {},
-      LibXR::Thread::Priority thread_priority = LibXR::Thread::Priority::HIGH)
-      : chassis_(motor_wheel_0, motor_wheel_1, motor_wheel_2, motor_wheel_3,
-                 motor_steer_0, motor_steer_1, motor_steer_2, motor_steer_3, cmd,
-                 power_control, referee, task_stack_depth,
+  Chassis(
+      Motor& motor_wheel_0,
+      Motor& motor_wheel_1,
+      Motor& motor_wheel_2,
+      Motor& motor_wheel_3,
+      Motor* motor_steer_0,
+      Motor* motor_steer_1,
+      Motor* motor_steer_2,
+      Motor* motor_steer_3,
+      CMD& cmd,
+      PowerControl& power_control,
+      Referee& referee,
+      uint32_t task_stack_depth = 1536,
+      const Param& param = {.chassis_param = {}, .pid_follow = {}, .pid_velocity_x = {}, .pid_velocity_y = {}, .pid_omega = {}, .pid_wheel_speed_0 = {}, .pid_wheel_speed_1 = {}, .pid_wheel_speed_2 = {}, .pid_wheel_speed_3 = {}, .pid_steer_angle_0 = {}, .pid_steer_angle_1 = {}, .pid_steer_angle_2 = {}, .pid_steer_angle_3 = {}, .pid_steer_speed_0 = {}, .pid_steer_speed_1 = {}, .pid_steer_speed_2 = {}, .pid_steer_speed_3 = {}, .thread_priority = LibXR::Thread::Priority::HIGH})
+      : chassis_(&motor_wheel_0, &motor_wheel_1, &motor_wheel_2, &motor_wheel_3,
+                 motor_steer_0, motor_steer_1, motor_steer_2, motor_steer_3, &cmd,
+                 &power_control, &referee, task_stack_depth,
                  typename ChassisType::ChassisParam{
-                     chassis_param.wheel_radius, chassis_param.wheel_to_center,
-                     chassis_param.gravity_height, chassis_param.reduction_ratio,
-                     chassis_param.wheel_resistance, chassis_param.error_compensation,
-                     chassis_param.gravity, chassis_param.length, chassis_param.width,
-                     chassis_param.rotor_speed_scale, chassis_param.rotor_omega_min_scale,
-                     chassis_param.rotor_buffer_low_j, chassis_param.rotor_buffer_high_j,
-                     chassis_param.rotor_scale_lpf_alpha},
-                 pid_follow_, pid_velocity_x_, pid_velocity_y_, pid_omega_,
-                 pid_wheel_speed_0_, pid_wheel_speed_1_, pid_wheel_speed_2_,
-                 pid_wheel_speed_3_, pid_steer_angle_0_, pid_steer_angle_1_,
-                 pid_steer_angle_2_, pid_steer_angle_3_, pid_steer_speed_0_,
-                 pid_steer_speed_1_, pid_steer_speed_2_, pid_steer_speed_3_,
-                 thread_priority),
-        referee_(referee)
+                     param.chassis_param.wheel_radius, param.chassis_param.wheel_to_center,
+                     param.chassis_param.gravity_height, param.chassis_param.reduction_ratio,
+                     param.chassis_param.wheel_resistance, param.chassis_param.error_compensation,
+                     param.chassis_param.gravity, param.chassis_param.length, param.chassis_param.width,
+                     param.chassis_param.rotor_speed_scale, param.chassis_param.rotor_omega_min_scale,
+                     param.chassis_param.rotor_buffer_low_j, param.chassis_param.rotor_buffer_high_j,
+                     param.chassis_param.rotor_scale_lpf_alpha},
+                 param.pid_follow, param.pid_velocity_x, param.pid_velocity_y, param.pid_omega,
+                 param.pid_wheel_speed_0, param.pid_wheel_speed_1, param.pid_wheel_speed_2,
+                 param.pid_wheel_speed_3, param.pid_steer_angle_0, param.pid_steer_angle_1,
+                 param.pid_steer_angle_2, param.pid_steer_angle_3, param.pid_steer_speed_0,
+                 param.pid_steer_speed_1, param.pid_steer_speed_2, param.pid_steer_speed_3,
+                 param.thread_priority),
+        referee_(&referee)
   {
     auto callback = LibXR::Callback<uint32_t>::Create(
         [](bool in_isr, Chassis* chassis, uint32_t event_id)
