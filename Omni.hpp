@@ -288,6 +288,7 @@ class Omni {
     pid_omega_.Reset();
     pid_velocity_x_.Reset();
     pid_velocity_y_.Reset();
+    pid_follow_.Reset();
     for (int i = 0; i < 4; i++) {
       pid_wheel_speed_[i].Reset();
     }
