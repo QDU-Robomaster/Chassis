@@ -135,6 +135,12 @@ class Helm
   {
     UNUSED(referee);
 
+    /* 舵轮底盘控制线程无条件访问四个舵向电机 */
+    ASSERT(motor_steer_0 != nullptr);
+    ASSERT(motor_steer_1 != nullptr);
+    ASSERT(motor_steer_2 != nullptr);
+    ASSERT(motor_steer_3 != nullptr);
+
     for (int i = 0; i < 4; i++)
     {
       motor_wheel_cmd_[i].mode = Motor::ControlMode::MODE_TORQUE;
