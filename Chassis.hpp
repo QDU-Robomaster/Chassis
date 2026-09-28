@@ -165,8 +165,6 @@ class Chassis
    */
   void EventHandler(uint32_t event_id) { chassis_.SetMode(event_id); }
 
-  void OnMonitor() {}
-
  private:
   ChassisType chassis_;
   LibXR::Event chassis_event_;
