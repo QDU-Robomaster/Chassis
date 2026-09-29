@@ -90,6 +90,7 @@ class Mecanum
    * @param pid_steer_angle_1 舵机1角度PID参数（本底盘未使用）
    * @param pid_steer_angle_2 舵机2角度PID参数（本底盘未使用）
    * @param pid_steer_angle_3 舵机3角度PID参数（本底盘未使用）
+   * @param topic_names 订阅的话题名
    */
   Mecanum(
 
@@ -111,7 +112,8 @@ class Mecanum
       LibXR::PID<float>::Param pid_steer_speed_1,
       LibXR::PID<float>::Param pid_steer_speed_2,
       LibXR::PID<float>::Param pid_steer_speed_3,
-      LibXR::Thread::Priority thread_priority = LibXR::Thread::Priority::MEDIUM)
+      LibXR::Thread::Priority thread_priority = LibXR::Thread::Priority::MEDIUM,
+      ChassisTopicNames topic_names = {})
       /*
        * 麦轮编号，箭头为轮子正方向
        *
@@ -141,6 +143,7 @@ class Mecanum
         power_control_(power_control),
         referee_(referee)
   {
+    topic_names_ = topic_names;
     UNUSED(motor_steer_1);
     UNUSED(motor_steer_2);
     UNUSED(motor_steer_3);
@@ -212,8 +215,9 @@ class Mecanum
   {
     mecanum->mutex_.Lock();
 
-    LibXR::Topic::ASyncSubscriber<CMD::ChassisCMD> cmd_suber("chassis_cmd");
-    LibXR::Topic::ASyncSubscriber<Referee::ChassisPack> referee_suber("chassis_ref");
+    LibXR::Topic::ASyncSubscriber<CMD::ChassisCMD> cmd_suber(mecanum->topic_names_.chassis_cmd);
+    LibXR::Topic::ASyncSubscriber<Referee::ChassisPack> referee_suber(
+        mecanum->topic_names_.chassis_ref);
     LibXR::Topic::ASyncSubscriber<float> yawmotor_angle_suber("yawmotor_angle");
 
     cmd_suber.StartWaiting();
@@ -983,6 +987,7 @@ class Mecanum
   LibXR::MillisecondTimestamp referee_last_rx_time_ = 0;
   Referee::ChassisPack referee_chassis_pack_{};
 
+  ChassisTopicNames topic_names_{};
   LibXR::Thread thread_;
   LibXR::Mutex mutex_;
 

@@ -86,6 +86,7 @@ class Omni
    * @param pid_steer_angle_1 舵机1角度PID参数（本底盘未使用）
    * @param pid_steer_angle_2 舵机2角度PID参数（本底盘未使用）
    * @param pid_steer_angle_3 舵机3角度PID参数（本底盘未使用）
+   * @param topic_names 订阅的话题名
    */
   Omni(Motor* motor_wheel_0, Motor* motor_wheel_1, Motor* motor_wheel_2,
        Motor* motor_wheel_3, Motor* motor_steer_0, Motor* motor_steer_1,
@@ -105,7 +106,8 @@ class Omni
        LibXR::PID<float>::Param pid_steer_speed_1,
        LibXR::PID<float>::Param pid_steer_speed_2,
        LibXR::PID<float>::Param pid_steer_speed_3,
-       LibXR::Thread::Priority thread_priority = LibXR::Thread::Priority::HIGH)
+       LibXR::Thread::Priority thread_priority = LibXR::Thread::Priority::HIGH,
+       ChassisTopicNames topic_names = {})
       : PARAM(chassis_param),
         motor_wheel_0_(motor_wheel_0),   /* wheel0   ▲ y  wheel3 */
         motor_wheel_1_(motor_wheel_1),   /*     ↙    │     ↖     */
@@ -125,6 +127,7 @@ class Omni
         power_control_(power_control),
         referee_(referee)
   {
+    topic_names_ = topic_names;
     UNUSED(motor_steer_0);
     UNUSED(motor_steer_1);
     UNUSED(motor_steer_2);
@@ -196,9 +199,11 @@ class Omni
   {
     omni->mutex_.Lock();
 
-    LibXR::Topic::ASyncSubscriber<CMD::ChassisCMD> cmd_suber("chassis_cmd");
-    LibXR::Topic::ASyncSubscriber<Referee::ChassisPack> referee_suber("chassis_ref");
-    LibXR::Topic::ASyncSubscriber<LibXR::EulerAngle<float>> euler_suber("gimbal_euler");
+    LibXR::Topic::ASyncSubscriber<CMD::ChassisCMD> cmd_suber(omni->topic_names_.chassis_cmd);
+    LibXR::Topic::ASyncSubscriber<Referee::ChassisPack> referee_suber(
+        omni->topic_names_.chassis_ref);
+    LibXR::Topic::ASyncSubscriber<LibXR::EulerAngle<float>> euler_suber(
+        omni->topic_names_.gimbal_euler);
     LibXR::Topic::ASyncSubscriber<float> yawmotor_angle_suber("yawmotor_angle");
     LibXR::Topic::ASyncSubscriber<float> pitchmotor_angle_suber("pitchmotor_angle");
 
@@ -1124,6 +1129,7 @@ class Omni
                                            LibXR::PID<float>(LibXR::PID<float>::Param()),
                                            LibXR::PID<float>(LibXR::PID<float>::Param())};
 
+  ChassisTopicNames topic_names_{};
   LibXR::Thread thread_;
   LibXR::Mutex mutex_;
 

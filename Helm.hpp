@@ -87,6 +87,7 @@ class Helm
    * @param pid_steer_angle_1 舵机1角度PID参数
    * @param pid_steer_angle_2 舵机2角度PID参数
    * @param pid_steer_angle_3 舵机3角度PID参数
+   * @param topic_names 订阅的话题名
    */
   Helm(Motor* motor_wheel_0, Motor* motor_wheel_1, Motor* motor_wheel_2,
        Motor* motor_wheel_3, Motor* motor_steer_0, Motor* motor_steer_1,
@@ -106,7 +107,8 @@ class Helm
        LibXR::PID<float>::Param pid_steer_speed_1,
        LibXR::PID<float>::Param pid_steer_speed_2,
        LibXR::PID<float>::Param pid_steer_speed_3,
-       LibXR::Thread::Priority thread_priority = LibXR::Thread::Priority::HIGH)
+       LibXR::Thread::Priority thread_priority = LibXR::Thread::Priority::HIGH,
+       ChassisTopicNames topic_names = {})
       : PARAM(chassis_param),
         motor_wheel_0_(motor_wheel_0),
         motor_wheel_1_(motor_wheel_1),
@@ -133,6 +135,7 @@ class Helm
         cmd_(cmd),
         power_control_(power_control)
   {
+    topic_names_ = topic_names;
     UNUSED(referee);
 
     /* 舵轮底盘控制线程无条件访问四个舵向电机 */
@@ -184,8 +187,9 @@ class Helm
   {
     helm->mutex_.Lock();
 
-    LibXR::Topic::ASyncSubscriber<CMD::ChassisCMD> cmd_suber("chassis_cmd");
-    LibXR::Topic::ASyncSubscriber<Referee::ChassisPack> referee_suber("chassis_ref");
+    LibXR::Topic::ASyncSubscriber<CMD::ChassisCMD> cmd_suber(helm->topic_names_.chassis_cmd);
+    LibXR::Topic::ASyncSubscriber<Referee::ChassisPack> referee_suber(
+        helm->topic_names_.chassis_ref);
     LibXR::Topic::ASyncSubscriber<float> yawmotor_angle_suber("yawmotor_angle");
 
     cmd_suber.StartWaiting();
@@ -638,6 +642,7 @@ class Helm
 
   Referee::ChassisPack referee_chassis_pack_{};
   LibXR::MillisecondTimestamp referee_last_rx_time_ = 0;
+  ChassisTopicNames topic_names_{};
   LibXR::Thread thread_;
   LibXR::Mutex mutex_;
 

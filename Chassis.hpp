@@ -40,6 +40,14 @@ struct MotorData
   float rotorspeed_rpm_6020[CHASSIS_POWER_CONTROL_MAX_MOTOR_COUNT] = {};
 };
 
+/* 底盘订阅的话题名；gimbal_euler 只有全向轮底盘使用 */
+struct ChassisTopicNames
+{
+  const char* chassis_cmd = "chassis_cmd";
+  const char* chassis_ref = "chassis_ref";
+  const char* gimbal_euler = "gimbal_euler";
+};
+
 #include "CMD.hpp"
 #include "Helm.hpp"
 #include "Mecanum.hpp"
@@ -93,6 +101,9 @@ class Chassis
     LibXR::PID<float>::Param pid_steer_speed_2;
     LibXR::PID<float>::Param pid_steer_speed_3;
     LibXR::Thread::Priority thread_priority;
+    const char* chassis_cmd_topic_name;   ///< 订阅的底盘控制命令 Topic 名称
+    const char* chassis_ref_topic_name;   ///< 订阅的裁判系统底盘数据 Topic 名称
+    const char* gimbal_euler_topic_name;  ///< 订阅的云台欧拉角 Topic 名称（仅全向轮底盘）
   };
 
   Chassis(
@@ -108,7 +119,7 @@ class Chassis
       PowerControl& power_control,
       Referee& referee,
       uint32_t task_stack_depth = 1536,
-      const Param& param = {.chassis_param = {}, .pid_follow = {}, .pid_velocity_x = {}, .pid_velocity_y = {}, .pid_omega = {}, .pid_wheel_speed_0 = {}, .pid_wheel_speed_1 = {}, .pid_wheel_speed_2 = {}, .pid_wheel_speed_3 = {}, .pid_steer_angle_0 = {}, .pid_steer_angle_1 = {}, .pid_steer_angle_2 = {}, .pid_steer_angle_3 = {}, .pid_steer_speed_0 = {}, .pid_steer_speed_1 = {}, .pid_steer_speed_2 = {}, .pid_steer_speed_3 = {}, .thread_priority = LibXR::Thread::Priority::HIGH})
+      const Param& param = {.chassis_param = {}, .pid_follow = {}, .pid_velocity_x = {}, .pid_velocity_y = {}, .pid_omega = {}, .pid_wheel_speed_0 = {}, .pid_wheel_speed_1 = {}, .pid_wheel_speed_2 = {}, .pid_wheel_speed_3 = {}, .pid_steer_angle_0 = {}, .pid_steer_angle_1 = {}, .pid_steer_angle_2 = {}, .pid_steer_angle_3 = {}, .pid_steer_speed_0 = {}, .pid_steer_speed_1 = {}, .pid_steer_speed_2 = {}, .pid_steer_speed_3 = {}, .thread_priority = LibXR::Thread::Priority::HIGH, .chassis_cmd_topic_name = "chassis_cmd", .chassis_ref_topic_name = "chassis_ref", .gimbal_euler_topic_name = "gimbal_euler"})
       : chassis_(&motor_wheel_0, &motor_wheel_1, &motor_wheel_2, &motor_wheel_3,
                  motor_steer_0, motor_steer_1, motor_steer_2, motor_steer_3, &cmd,
                  &power_control, &referee, task_stack_depth,
@@ -125,7 +136,9 @@ class Chassis
                  param.pid_wheel_speed_3, param.pid_steer_angle_0, param.pid_steer_angle_1,
                  param.pid_steer_angle_2, param.pid_steer_angle_3, param.pid_steer_speed_0,
                  param.pid_steer_speed_1, param.pid_steer_speed_2, param.pid_steer_speed_3,
-                 param.thread_priority),
+                 param.thread_priority,
+                 ChassisTopicNames{param.chassis_cmd_topic_name, param.chassis_ref_topic_name,
+                                   param.gimbal_euler_topic_name}),
         referee_(&referee)
   {
     auto callback = LibXR::Callback<uint32_t>::Create(
