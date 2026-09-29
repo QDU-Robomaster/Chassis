@@ -29,11 +29,13 @@
 
 | Topic | 类型 | 用途 |
 | --- | --- | --- |
-| `chassis_cmd` | `CMD::ChassisCMD` | 底盘控制命令（CMD 发布） |
-| `chassis_ref` | `Referee::ChassisPack` | 裁判系统功率上限与缓冲能量 |
+| `param.chassis_cmd_topic_name`（默认 `chassis_cmd`） | `CMD::ChassisCMD` | 底盘控制命令（CMD 发布） |
+| `param.chassis_ref_topic_name`（默认 `chassis_ref`） | `Referee::ChassisPack` | 裁判系统功率上限与缓冲能量 |
 | `yawmotor_angle` | `float` | 云台 yaw 电机相对零点的角度（Gimbal 发布），用于 FOLLOW 与坐标变换 |
-| `gimbal_euler` | `LibXR::EulerAngle<float>` | 仅 `Omni`：云台姿态，用于姿态前馈 |
+| `param.gimbal_euler_topic_name`（默认 `gimbal_euler`） | `LibXR::EulerAngle<float>` | 仅 `Omni`：云台姿态，用于姿态前馈 |
 | `pitchmotor_angle` | `float` | 仅 `Omni`：云台 pitch 电机角度，用于姿态前馈 |
+
+可配置的名字须与发布方的配置一致；`yawmotor_angle`、`pitchmotor_angle` 由 Gimbal 以固定名字发布。
 
 `Helm` 另外每周期发布 `delta_yaw`（`float`，`yawmotor_angle` 归一化后取反）。
 
@@ -65,7 +67,7 @@
 - `QDU-Robomaster/Referee`：裁判系统数据类型与 UI 绘制。
 - `QDU-Robomaster/SuperPower`：`Mecanum.hpp` 包含其头文件。
 - `xrobot-org/BMI088`、`xrobot-org/MadgwickAHRS`：列在 manifest 中，代码不直接包含；
-  `Omni` 订阅的 `gimbal_euler` 通常由姿态解算实例以该名字发布。
+  `Omni` 订阅的云台姿态（`param.gimbal_euler_topic_name`）通常由姿态解算实例发布。
 
 无外部软件包，仅使用 LibXR。
 
@@ -91,7 +93,8 @@ Chassis(Motor& motor_wheel_0,
 ```
 
 `param` 的默认值：`chassis_param` 与全部 PID 参数为 `{}`（值初始化），
-`thread_priority = LibXR::Thread::Priority::HIGH`。
+`thread_priority = LibXR::Thread::Priority::HIGH`，三个 Topic 名称依次为 `chassis_cmd`、
+`chassis_ref`、`gimbal_euler`。
 
 模板参数：
 
@@ -122,6 +125,9 @@ Chassis(Motor& motor_wheel_0,
   `pid_steer_angle_0..3`、`pid_steer_speed_0..3`：`LibXR::PID<float>::Param`，
   字段依次为 `k`、`p`、`i`、`d`、`i_limit`、`out_limit`、`cycle`；默认全为 LibXR 的默认值。
 - `param.thread_priority`：控制线程优先级，默认 `HIGH`。
+- `param.chassis_cmd_topic_name`：订阅的底盘控制命令 Topic，默认 `chassis_cmd`。
+- `param.chassis_ref_topic_name`：订阅的裁判系统底盘数据 Topic，默认 `chassis_ref`。
+- `param.gimbal_euler_topic_name`：订阅的云台欧拉角 Topic，默认 `gimbal_euler`，仅 `Omni` 使用。
 
 ## 使用
 
@@ -187,6 +193,9 @@ modules:
           pid_steer_speed_2: []
           pid_steer_speed_3: []
           thread_priority: LibXR::Thread::Priority::HIGH
+          chassis_cmd_topic_name: '"chassis_cmd"'
+          chassis_ref_topic_name: '"chassis_ref"'
+          gimbal_euler_topic_name: '"gimbal_euler"'
 ```
 
 所有依赖都是其他模块实例的 id，须在本实例之前列出：`motor_wheel_0..3` 为
