@@ -28,24 +28,43 @@ depends:
 
 #include "thread.hpp"
 
-/* 功率控制数组中的电机数量上限 */
+/// 功率控制数组中的电机数量上限
+/// Maximum motor count of the power control arrays
 static constexpr int CHASSIS_POWER_CONTROL_MAX_MOTOR_COUNT = 6;
 
+/**
+ * @brief 提交给 PowerControl 的电机数据，3508 与 6020 各一组。
+ *        Motor data submitted to PowerControl, one set each for the 3508 and 6020 motors.
+ */
 struct MotorData
 {
   float output_current_3508[CHASSIS_POWER_CONTROL_MAX_MOTOR_COUNT] = {};
+  ///< 3508 电机的输出电流（电机控制单位）
+  ///< Output current of the 3508 motors (motor control units)
   float rotorspeed_rpm_3508[CHASSIS_POWER_CONTROL_MAX_MOTOR_COUNT] = {};
+  ///< 3508 电机的转子转速 (rpm)
+  ///< Rotor speed of the 3508 motors (rpm)
 
   float output_current_6020[CHASSIS_POWER_CONTROL_MAX_MOTOR_COUNT] = {};
+  ///< 6020 电机的输出电流（电机控制单位）
+  ///< Output current of the 6020 motors (motor control units)
   float rotorspeed_rpm_6020[CHASSIS_POWER_CONTROL_MAX_MOTOR_COUNT] = {};
+  ///< 6020 电机的转子转速 (rpm)
+  ///< Rotor speed of the 6020 motors (rpm)
 };
 
-/* 底盘订阅的 Topic 名称；gimbal_euler 由全向轮底盘使用 */
+/**
+ * @brief 底盘订阅的 Topic 名称。
+ *        Names of the Topics subscribed by the chassis.
+ */
 struct ChassisTopicNames
 {
-  const char* chassis_cmd = "chassis_cmd";
-  const char* chassis_ref = "chassis_ref";
-  const char* gimbal_euler = "gimbal_euler";
+  const char* chassis_cmd = "chassis_cmd";  ///< 底盘控制命令 Topic
+  ///< Chassis command Topic
+  const char* chassis_ref = "chassis_ref";  ///< 裁判系统底盘数据 Topic
+  ///< Referee chassis data Topic
+  const char* gimbal_euler = "gimbal_euler";  ///< 云台欧拉角 Topic，由全向轮底盘使用
+  ///< Gimbal Euler angle Topic, used by Omni
 };
 
 #include "CMD.hpp"
@@ -58,53 +77,143 @@ struct ChassisTopicNames
 #include "libxr_def.hpp"
 #include "pid.hpp"
 
+/**
+ * @brief 底盘控制模块：模板参数选择麦轮、全向轮或舵轮实现。
+ *        Chassis control Module; the template parameter selects the mecanum,
+ *        omnidirectional-wheel or helm (swerve) implementation.
+ *
+ * @tparam ChassisType 底盘实现：Mecanum、Omni 或 Helm。
+ *                     Chassis implementation: Mecanum, Omni or Helm.
+ */
 template <typename ChassisType>
 class Chassis
 {
  public:
+  /// 所选底盘实现的模式枚举
+  /// Mode enum of the selected chassis implementation
   using ChassisMode = typename ChassisType::ChassisMode;
+
+  /**
+   * @brief 底盘几何、动力与小陀螺缩放参数。
+   *        Chassis geometry, dynamics and spin-scaling parameters.
+   */
   struct ChassisParam
   {
-    float wheel_radius = 0.0f;
-    float wheel_to_center = 0.0f;
-    float gravity_height = 0.0f;
-    float reduction_ratio = 0.0f;
-    float wheel_resistance = 0.0f;
-    float error_compensation = 0.0f;
-    float gravity = 0.0f;
-    float length = 0.0f;
-    float width = 0.0f;
-    float rotor_speed_scale = 1.0f;
-    float rotor_omega_min_scale = 0.55f;
-    float rotor_buffer_low_j = 35.0f;
-    float rotor_buffer_high_j = 70.0f;
-    float rotor_scale_lpf_alpha = 0.2f;
+    float wheel_radius = 0.0f;  ///< 轮半径 (m)
+    ///< Wheel radius (m)
+    float wheel_to_center = 0.0f;  ///< 轮心到底盘中心的距离 (m)
+    ///< Distance from the wheel center to the chassis center (m)
+    float gravity_height = 0.0f;  ///< 质心高度 (m)，用于全向轮姿态前馈
+    ///< Center-of-mass height (m), used by the Omni attitude feedforward
+    float reduction_ratio = 0.0f;  ///< 轮电机减速比
+    ///< Reduction ratio of the wheel motors
+    float wheel_resistance = 0.0f;  ///< 轮阻
+    ///< Wheel resistance
+    float error_compensation = 0.0f;  ///< 误差补偿
+    ///< Error compensation
+    float gravity = 0.0f;  ///< 底盘重力 (N)，用于全向轮姿态前馈
+    ///< Chassis weight (N), used by the Omni attitude feedforward
+    float length = 0.0f;  ///< 轮距的长 (m)，用于全向轮姿态前馈
+    ///< Length of the wheel layout (m), used by the Omni attitude feedforward
+    float width = 0.0f;  ///< 轮距的宽 (m)，用于全向轮姿态前馈
+    ///< Width of the wheel layout (m), used by the Omni attitude feedforward
+    float rotor_speed_scale = 1.0f;  ///< 平移输入下的小陀螺转速缩放比例
+    ///< Spin speed scale under translation input
+    float rotor_omega_min_scale = 0.55f;  ///< 小陀螺动态缩放的下限
+    ///< Lower bound of the dynamic spin scale
+    float rotor_buffer_low_j = 35.0f;  ///< 缓冲能量低阈值 (J)
+    ///< Low buffer energy threshold (J)
+    float rotor_buffer_high_j = 70.0f;  ///< 缓冲能量高阈值 (J)
+    ///< High buffer energy threshold (J)
+    float rotor_scale_lpf_alpha = 0.2f;  ///< 动态缩放的一阶低通系数
+    ///< First-order low-pass coefficient of the dynamic scale
   };
 
+  /**
+   * @brief 底盘配置参数。
+   *        Chassis configuration parameters.
+   */
   struct Param
   {
-    ChassisParam chassis_param;
-    LibXR::PID<float>::Param pid_follow;
-    LibXR::PID<float>::Param pid_velocity_x;
-    LibXR::PID<float>::Param pid_velocity_y;
-    LibXR::PID<float>::Param pid_omega;
-    LibXR::PID<float>::Param pid_wheel_speed_0;
-    LibXR::PID<float>::Param pid_wheel_speed_1;
-    LibXR::PID<float>::Param pid_wheel_speed_2;
-    LibXR::PID<float>::Param pid_wheel_speed_3;
-    LibXR::PID<float>::Param pid_steer_angle_0;
-    LibXR::PID<float>::Param pid_steer_angle_1;
-    LibXR::PID<float>::Param pid_steer_angle_2;
-    LibXR::PID<float>::Param pid_steer_angle_3;
-    LibXR::PID<float>::Param pid_steer_speed_0;
-    LibXR::PID<float>::Param pid_steer_speed_1;
-    LibXR::PID<float>::Param pid_steer_speed_2;
-    LibXR::PID<float>::Param pid_steer_speed_3;
-    LibXR::Thread::Priority thread_priority;
-    const char* chassis_cmd_topic_name;   ///< 订阅的底盘控制命令 Topic 名称
-    const char* chassis_ref_topic_name;   ///< 订阅的裁判系统底盘数据 Topic 名称
-    const char* gimbal_euler_topic_name;  ///< 订阅的云台欧拉角 Topic 名称（仅全向轮底盘）
+    ChassisParam chassis_param;  ///< 底盘几何、动力与小陀螺缩放参数
+    ///< Chassis geometry, dynamics and spin-scaling parameters
+    LibXR::PID<float>::Param pid_follow;  ///< 跟随云台的角度环 PID
+    ///< Gimbal-following angle-loop PID
+    LibXR::PID<float>::Param pid_velocity_x;  ///< x 方向速度环 PID
+    ///< x velocity-loop PID
+    LibXR::PID<float>::Param pid_velocity_y;  ///< y 方向速度环 PID
+    ///< y velocity-loop PID
+    LibXR::PID<float>::Param pid_omega;  ///< 角速度环 PID
+    ///< Angular-velocity-loop PID
+    LibXR::PID<float>::Param pid_wheel_speed_0;  ///< 轮 0 速度环 PID
+    ///< Speed-loop PID of wheel 0
+    LibXR::PID<float>::Param pid_wheel_speed_1;  ///< 轮 1 速度环 PID
+    ///< Speed-loop PID of wheel 1
+    LibXR::PID<float>::Param pid_wheel_speed_2;  ///< 轮 2 速度环 PID
+    ///< Speed-loop PID of wheel 2
+    LibXR::PID<float>::Param pid_wheel_speed_3;  ///< 轮 3 速度环 PID
+    ///< Speed-loop PID of wheel 3
+    LibXR::PID<float>::Param pid_steer_angle_0;  ///< 舵 0 角度环 PID，Mecanum 履带速度环
+    ///< Angle-loop PID of steering motor 0; Mecanum: track speed loop
+    LibXR::PID<float>::Param pid_steer_angle_1;  ///< 舵 1 角度环 PID
+    ///< Angle-loop PID of steering motor 1
+    LibXR::PID<float>::Param pid_steer_angle_2;  ///< 舵 2 角度环 PID
+    ///< Angle-loop PID of steering motor 2
+    LibXR::PID<float>::Param pid_steer_angle_3;  ///< 舵 3 角度环 PID
+    ///< Angle-loop PID of steering motor 3
+    LibXR::PID<float>::Param pid_steer_speed_0;  ///< 舵 0 速度环 PID
+    ///< Speed-loop PID of steering motor 0
+    LibXR::PID<float>::Param pid_steer_speed_1;  ///< 舵 1 速度环 PID
+    ///< Speed-loop PID of steering motor 1
+    LibXR::PID<float>::Param pid_steer_speed_2;  ///< 舵 2 速度环 PID
+    ///< Speed-loop PID of steering motor 2
+    LibXR::PID<float>::Param pid_steer_speed_3;  ///< 舵 3 速度环 PID
+    ///< Speed-loop PID of steering motor 3
+    LibXR::Thread::Priority thread_priority;  ///< 控制线程优先级
+    ///< Control thread priority
+    const char* chassis_cmd_topic_name;  ///< 订阅的底盘控制命令 Topic 名称
+    ///< Name of the subscribed chassis command Topic
+    const char* chassis_ref_topic_name;  ///< 订阅的裁判系统底盘数据 Topic 名称
+    ///< Name of the subscribed referee chassis data Topic
+    const char* gimbal_euler_topic_name;  ///< 订阅的云台欧拉角 Topic 名称（Omni 使用）
+    ///< Name of the subscribed gimbal Euler angle Topic (used by Omni)
   };
+
+  /**
+   * @brief 构造 Chassis，创建所选底盘的控制线程并注册模式事件。
+   *        Construct Chassis, create the control thread of the selected chassis and
+   *        register the mode events.
+   *
+   * @param motor_wheel_0 第 0 个驱动轮电机。
+   *                      Drive wheel motor 0.
+   * @param motor_wheel_1 第 1 个驱动轮电机。
+   *                      Drive wheel motor 1.
+   * @param motor_wheel_2 第 2 个驱动轮电机。
+   *                      Drive wheel motor 2.
+   * @param motor_wheel_3 第 3 个驱动轮电机。
+   *                      Drive wheel motor 3.
+   * @param motor_steer_0 舵向电机 0；Mecanum 为履带电机，可为 nullptr；Helm 须非空；
+   *                      Omni 填 nullptr。
+   *                      Steering motor 0; the track motor of Mecanum, may be nullptr;
+   *                      non-null for Helm; nullptr for Omni.
+   * @param motor_steer_1 舵向电机 1；Helm 须非空，其他底盘填 nullptr。
+   *                      Steering motor 1; non-null for Helm, nullptr for the others.
+   * @param motor_steer_2 舵向电机 2；Helm 须非空，其他底盘填 nullptr。
+   *                      Steering motor 2; non-null for Helm, nullptr for the others.
+   * @param motor_steer_3 舵向电机 3；Helm 须非空，其他底盘填 nullptr。
+   *                      Steering motor 3; non-null for Helm, nullptr for the others.
+   * @param cmd 控制命令模块实例，提供控制命令、控制模式与 CMD 事件。
+   *            Control command Module instance, providing the control command, the
+   *            control mode and the CMD events.
+   * @param power_control 功率控制模块实例。
+   *                      Power control Module instance.
+   * @param referee 裁判系统模块实例。
+   *                Referee Module instance.
+   * @param task_stack_depth 控制线程栈深，默认 1536。
+   *                         Control thread stack depth, default 1536.
+   * @param param 配置参数，默认值见 Param 与 ChassisParam。
+   *              Configuration parameters; see Param and ChassisParam for the defaults.
+   */
 
   Chassis(
       Motor& motor_wheel_0,
@@ -163,15 +272,24 @@ class Chassis
   }
 
   /**
-   * @brief 获取底盘的事件处理器
-   * @details 通过此事件处理器可以向底盘发送事件消息，控制底盘的行为模式
-   * @return LibXR::Event& 事件处理器的引用
+   * @brief 获取模式切换事件。
+   *        Get the mode-switching event.
+   *
+   * @details 事件上注册了 ChassisMode 的各个值，激活对应的事件 ID 即切换底盘模式。
+   *          Every value of ChassisMode is registered on the event; activating the
+   *          corresponding event ID switches the chassis mode.
+   *
+   * @return 事件对象的引用。
+   *         Reference to the event object.
    */
   LibXR::Event& GetEvent() { return chassis_event_; }
 
   /**
-   * @brief 事件处理器，根据传入的事件ID执行相应操作
-   * @param event_id 触发的事件ID
+   * @brief 按事件 ID 设置底盘模式。
+   *        Set the chassis mode from an event ID.
+   *
+   * @param event_id 事件 ID，取 ChassisMode 的值。
+   *                 Event ID, a value of ChassisMode.
    */
   void EventHandler(uint32_t event_id) { chassis_.SetMode(event_id); }
 

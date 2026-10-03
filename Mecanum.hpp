@@ -36,34 +36,65 @@ depends: []
 template <typename ChassisType>
 class Chassis;
 
+/**
+ * @brief 麦轮底盘控制实现，由 Chassis 模板使用。
+ *        Mecanum chassis controller used by the Chassis template.
+ */
 class Mecanum
 {
  public:
+  /**
+   * @brief 底盘几何、动力与小陀螺缩放参数。
+   *        Chassis geometry, dynamics and spin-scaling parameters.
+   */
   struct ChassisParam
   {
-    float wheel_radius = 0.0f;
-    float wheel_to_center = 0.0f;
-    float gravity_height = 0.0f;
-    float reduction_ratio = 0.0f;
-    float wheel_resistance = 0.0f;
-    float error_compensation = 0.0f;
-    float gravity = 0.0f;
-    float length = 0.0f;
-    float width = 0.0f;
-    float rotor_speed_scale = 1.0f; /* 小陀螺转速缩放比例，降低可给平移留出更多功率 */
-    float rotor_omega_min_scale = 0.55f; /* 动态缩放下限 */
-    float rotor_buffer_low_j = 35.0f;    /* 缓冲能量低阈值 */
-    float rotor_buffer_high_j = 70.0f;   /* 缓冲能量高阈值 */
-    float rotor_scale_lpf_alpha = 0.2f;  /* 动态缩放低通系数 */
+    float wheel_radius = 0.0f;  ///< 轮半径 (m)
+    ///< Wheel radius (m)
+    float wheel_to_center = 0.0f;  ///< 轮心到底盘中心的距离 (m)
+    ///< Distance from the wheel center to the chassis center (m)
+    float gravity_height = 0.0f;  ///< 质心高度 (m)，用于全向轮姿态前馈
+    ///< Center-of-mass height (m), used by the Omni attitude feedforward
+    float reduction_ratio = 0.0f;  ///< 轮电机减速比
+    ///< Reduction ratio of the wheel motors
+    float wheel_resistance = 0.0f;  ///< 轮阻
+    ///< Wheel resistance
+    float error_compensation = 0.0f;  ///< 误差补偿
+    ///< Error compensation
+    float gravity = 0.0f;  ///< 底盘重力 (N)，用于全向轮姿态前馈
+    ///< Chassis weight (N), used by the Omni attitude feedforward
+    float length = 0.0f;  ///< 轮距的长 (m)，用于全向轮姿态前馈
+    ///< Length of the wheel layout (m), used by the Omni attitude feedforward
+    float width = 0.0f;  ///< 轮距的宽 (m)，用于全向轮姿态前馈
+    ///< Width of the wheel layout (m), used by the Omni attitude feedforward
+    float rotor_speed_scale = 1.0f;  ///< 平移输入下的小陀螺转速缩放比例
+    ///< Spin speed scale under translation input
+    float rotor_omega_min_scale = 0.55f;  ///< 小陀螺动态缩放的下限
+    ///< Lower bound of the dynamic spin scale
+    float rotor_buffer_low_j = 35.0f;  ///< 缓冲能量低阈值 (J)
+    ///< Low buffer energy threshold (J)
+    float rotor_buffer_high_j = 70.0f;  ///< 缓冲能量高阈值 (J)
+    ///< High buffer energy threshold (J)
+    float rotor_scale_lpf_alpha = 0.2f;  ///< 动态缩放的一阶低通系数
+    ///< First-order low-pass coefficient of the dynamic scale
   };
 
+  /**
+   * @brief 底盘模式。
+   *        Chassis modes.
+   */
   enum class ChassisMode : uint8_t
   {
-    RELAX,
-    INDEPENDENT,
-    ROTOR,
-    FOLLOW,
-    TRACK_START,
+    RELAX,  ///< 放松：全部电机放松
+    ///< Relax: all motors relaxed
+    INDEPENDENT,  ///< 独立：平移相对底盘坐标系
+    ///< Independent: translation in the chassis frame
+    ROTOR,  ///< 小陀螺：底盘旋转，平移相对云台坐标系
+    ///< Spin: the chassis rotates, translation in the gimbal frame
+    FOLLOW,  ///< 跟随：底盘跟随云台 yaw，平移相对云台坐标系
+    ///< Follow: the chassis follows the gimbal yaw, translation in the gimbal frame
+    TRACK_START  ///< 履带：履带负责前后，麦轮提供横移与辅助
+    ///< Track: the track drives forward/backward, the wheels give lateral motion
   };
   /**
    * @brief 构造麦轮底盘控制对象，创建控制线程。
@@ -552,9 +583,12 @@ class Mecanum
   }
 
   /**
-   * @brief 更新功率控制：提交反馈与期望输出，计算功率上限并读取限幅结果，同时更新小陀螺动态缩放。
-   *        Update power control: submit the feedback and the requested outputs, compute
-   *        the power limit, read the limited result and update the dynamic spin scale.
+   * @brief 更新功率控制与小陀螺动态缩放。
+   *        Update power control and the dynamic spin scale.
+   *
+   * @details 提交反馈与期望输出，计算功率上限并读取限幅结果。
+   *          Submits the feedback and the requested outputs, computes the power limit and
+   *          reads the limited result.
    */
   void PowerControlUpdate()
   {
