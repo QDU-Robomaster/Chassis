@@ -2,7 +2,7 @@
 
 // clang-format off
 /* === MODULE MANIFEST V2 ===
-module_description: No description provided
+module_description: 全向轮底盘控制实现，由 Chassis 模板使用 / Omnidirectional-wheel chassis controller used by the Chassis template
 depends: []
 === END MANIFEST === */
 // clang-format on
@@ -62,31 +62,72 @@ class Omni
   };
 
   /**
-   * @brief 构造函数，初始化全向轮底盘控制对象
-   * @param cmd 控制命令引用
-   * @param motor_wheel_0 第0个驱动轮电机指针
-   * @param motor_wheel_1 第1个驱动轮电机指针
-   * @param motor_wheel_2 第2个驱动轮电机指针
-   * @param motor_wheel_3 第3个驱动轮电机指针
-   * @param motor_steer_0 第0个舵向电机指针（本底盘未使用）
-   * @param motor_steer_1 第1个舵向电机指针（本底盘未使用）
-   * @param motor_steer_2 第2个舵向电机指针（本底盘未使用）
-   * @param motor_steer_3 第3个舵向电机指针（本底盘未使用）
-   * @param task_stack_depth 控制线程栈深度
-   * @param chassis_param 全向轮底盘参数
-   * @param pid_follow 跟随控制PID参数
-   * @param pid_velocity_x X方向速度PID参数
-   * @param pid_velocity_y Y方向速度PID参数
-   * @param pid_omega 角速度PID参数
-   * @param pid_wheel_omega_0 轮子0角速度PID参数
-   * @param pid_wheel_omega_1 轮子1角速度PID参数
-   * @param pid_wheel_omega_2 轮子2角速度PID参数
-   * @param pid_wheel_omega_3 轮子3角速度PID参数
-   * @param pid_steer_angle_0 舵机0角度PID参数（本底盘未使用）
-   * @param pid_steer_angle_1 舵机1角度PID参数（本底盘未使用）
-   * @param pid_steer_angle_2 舵机2角度PID参数（本底盘未使用）
-   * @param pid_steer_angle_3 舵机3角度PID参数（本底盘未使用）
-   * @param topic_names 订阅的话题名
+   * @brief 构造全向轮底盘控制对象，创建控制线程。
+   *        Construct the omnidirectional-wheel chassis controller and create the control
+   *        thread.
+   *
+   * @param motor_wheel_0 第 0 个驱动轮电机。
+   *                      Drive wheel motor 0.
+   * @param motor_wheel_1 第 1 个驱动轮电机。
+   *                      Drive wheel motor 1.
+   * @param motor_wheel_2 第 2 个驱动轮电机。
+   *                      Drive wheel motor 2.
+   * @param motor_wheel_3 第 3 个驱动轮电机。
+   *                      Drive wheel motor 3.
+   * @param motor_steer_0 与其他底盘类型共用的构造参数。
+   *                      Constructor parameter shared with the other chassis types.
+   * @param motor_steer_1 与其他底盘类型共用的构造参数。
+   *                      Constructor parameter shared with the other chassis types.
+   * @param motor_steer_2 与其他底盘类型共用的构造参数。
+   *                      Constructor parameter shared with the other chassis types.
+   * @param motor_steer_3 与其他底盘类型共用的构造参数。
+   *                      Constructor parameter shared with the other chassis types.
+   * @param cmd 控制命令模块实例。
+   *            Control command Module instance.
+   * @param power_control 功率控制模块实例。
+   *                      Power control Module instance.
+   * @param referee 裁判系统模块实例。
+   *                Referee Module instance.
+   * @param task_stack_depth 控制线程栈深。
+   *                         Control thread stack depth.
+   * @param chassis_param 底盘几何与动力参数。
+   *                      Chassis geometry and dynamics parameters.
+   * @param pid_follow 跟随云台的角度 PID 参数。
+   *                   PID parameters of the gimbal-following angle loop.
+   * @param pid_velocity_x x 方向速度 PID 参数。
+   *                       PID parameters of the x velocity loop.
+   * @param pid_velocity_y y 方向速度 PID 参数。
+   *                       PID parameters of the y velocity loop.
+   * @param pid_omega 角速度 PID 参数。
+   *                  PID parameters of the angular-velocity loop.
+   * @param pid_wheel_speed_0 轮 0 速度 PID 参数。
+   *                          PID parameters of the speed loop of wheel 0.
+   * @param pid_wheel_speed_1 轮 1 速度 PID 参数。
+   *                          PID parameters of the speed loop of wheel 1.
+   * @param pid_wheel_speed_2 轮 2 速度 PID 参数。
+   *                          PID parameters of the speed loop of wheel 2.
+   * @param pid_wheel_speed_3 轮 3 速度 PID 参数。
+   *                          PID parameters of the speed loop of wheel 3.
+   * @param pid_steer_angle_0 与其他底盘类型共用的构造参数。
+   *                          Constructor parameter shared with the other chassis types.
+   * @param pid_steer_angle_1 与其他底盘类型共用的构造参数。
+   *                          Constructor parameter shared with the other chassis types.
+   * @param pid_steer_angle_2 与其他底盘类型共用的构造参数。
+   *                          Constructor parameter shared with the other chassis types.
+   * @param pid_steer_angle_3 与其他底盘类型共用的构造参数。
+   *                          Constructor parameter shared with the other chassis types.
+   * @param pid_steer_speed_0 与其他底盘类型共用的构造参数。
+   *                          Constructor parameter shared with the other chassis types.
+   * @param pid_steer_speed_1 与其他底盘类型共用的构造参数。
+   *                          Constructor parameter shared with the other chassis types.
+   * @param pid_steer_speed_2 与其他底盘类型共用的构造参数。
+   *                          Constructor parameter shared with the other chassis types.
+   * @param pid_steer_speed_3 与其他底盘类型共用的构造参数。
+   *                          Constructor parameter shared with the other chassis types.
+   * @param thread_priority 控制线程优先级。
+   *                        Control thread priority.
+   * @param topic_names 订阅的 Topic 名称。
+   *                    Names of the subscribed Topics.
    */
   Omni(Motor* motor_wheel_0, Motor* motor_wheel_1, Motor* motor_wheel_2,
        Motor* motor_wheel_3, Motor* motor_steer_0, Motor* motor_steer_1,
@@ -156,7 +197,7 @@ class Omni
                    thread_priority);
     if (referee_ != nullptr)
     {
-      /* 底盘裁判系统 UI 由 Omni 自己的定时器任务周期刷新 */
+      /* 底盘裁判系统 UI 由定时器任务周期刷新 */
       timer_ui_ = LibXR::Timer::CreateTask(DrawUI, this, UI_REFRESH_PERIOD_MS);
       LibXR::Timer::Add(timer_ui_);
       LibXR::Timer::Start(timer_ui_);
@@ -191,9 +232,15 @@ class Omni
   }
 
   /**
-   * @brief 全向轮底盘控制线程函数
-   * @param omni Omni对象指针
-   * @details 控制线程主循环，负责接收控制指令、执行运动学解算和动力学控制输出
+   * @brief 全向轮底盘控制线程函数。
+   *        Control thread function of the omnidirectional-wheel chassis.
+   *
+   * @details 线程主循环：接收控制命令，执行运动学解算并输出控制量。
+   *          Main loop: receives the control command, solves the kinematics and sends the
+   *          outputs.
+   *
+   * @param omni Omni 对象指针。
+   *             Pointer to the Omni object.
    */
   static void ThreadFunction(Omni* omni)
   {
@@ -267,8 +314,12 @@ class Omni
   }
 
   /**
-   * @brief 更新电机状态
-   * @details 获取当前时间戳并更新所有驱动轮电机的状态
+   * @brief 更新电机状态。
+   *        Update the motor states.
+   *
+   * @details 记录采样间隔，更新四个驱动轮电机并读取反馈。
+   *          Records the sampling interval, updates the four wheel motors and reads their
+   *          feedback.
    */
   void Update()
   {
@@ -284,8 +335,12 @@ class Omni
   }
 
   /**
-   * @brief 设置底盘模式 (由 Chassis 外壳调用)
-   * @param mode 要设置的新模式
+   * @brief 设置底盘模式并复位速度与轮速 PID，由 Chassis 外壳调用。
+   *        Set the chassis mode and reset the velocity and wheel-speed PIDs; called by
+   *        the Chassis shell.
+   *
+   * @param mode 新模式，取 ChassisMode 的值。
+   *             New mode, a value of ChassisMode.
    */
   void SetMode(uint32_t mode)
   {
@@ -305,8 +360,9 @@ class Omni
   }
 
   /**
-   * @brief 更新底盘控制指令状态
-   * @details 从CMD获取底盘控制指令，并转换为目标速度
+   * @brief 从 CMD 命令更新目标角速度与目标平移速度。
+   *        Update the target angular velocity and the target translation velocity from
+   *        the CMD command.
    */
   void UpdateCMD()
   {
@@ -327,7 +383,6 @@ class Omni
         target_omega_ = -static_cast<float>(max_v / PARAM.wheel_to_center);
         break;
 
-        /* 正方向跟随云台 */
       case ChassisMode::FOLLOW:
         target_omega_ = -pid_follow_.Calculate(0.0f, yawmotor_angle_, dt_);
         break;
@@ -385,10 +440,15 @@ class Omni
   }
 
   /**
-   * @brief 前馈死区软限幅
-   * @param x 输入值
-   * @param dz 死区范围
-   * @return 软限幅后的输出
+   * @brief 带死区的软限幅，用于姿态前馈。
+   *        Soft dead-zone used by the attitude feedforward.
+   *
+   * @param x 输入值。
+   *          Input value.
+   * @param dz 死区范围。
+   *           Dead-zone width.
+   * @return 死区外的输出值。
+   *         Output outside the dead zone.
    */
   float SoftDeadzone(float x, float dz)
   {
@@ -403,7 +463,9 @@ class Omni
   }
 
   /**
-   * @brief 计算姿态前馈
+   * @brief 由云台姿态与云台电机角度计算底盘姿态前馈力矩。
+   *        Compute the attitude feedforward torques from the gimbal attitude and the
+   *        gimbal motor angles.
    */
   void FeedForward()
   {
@@ -538,8 +600,11 @@ class Omni
   }
 
   /**
-   * @brief 全向轮底盘正运动学解算
-   * @details 根据四个全向轮的角速度，解算出底盘当前的运动状态
+   * @brief 全向轮底盘正运动学解算。
+   *        Forward kinematics of the omnidirectional-wheel chassis.
+   *
+   * @details 由四个全向轮的角速度解算底盘的运动状态。
+   *          Solves the chassis motion from the angular velocities of the four wheels.
    */
   void SelfResolution()
   {
@@ -565,8 +630,12 @@ class Omni
   }
 
   /**
-   * @brief 全向轮底盘逆运动学解算
-   * @details 根据目标底盘速度（vx, vy, ω），计算四个全向轮的目标角速度
+   * @brief 全向轮底盘逆运动学解算。
+   *        Inverse kinematics of the omnidirectional-wheel chassis.
+   *
+   * @details 由目标底盘速度 (vx, vy, ω) 计算四个全向轮的目标角速度。
+   *          Computes the target angular velocity of the four wheels from the target
+   *          chassis velocity (vx, vy, ω).
    */
   void InverseKinematicsSolution()
   {
@@ -587,7 +656,9 @@ class Omni
   }
 
   /**
-   * @brief 计算 PID 输出电流
+   * @brief 计算轮速 PID 输出，并与前馈力矩及姿态前馈合成。
+   *        Compute the wheel-speed PID outputs and combine them with the feedforward
+   *        torque and the attitude feedforward.
    */
   void CalculateMotorCurrent()
   {
@@ -615,7 +686,9 @@ class Omni
   }
 
   /**
-   * @brief 功率控制更新
+   * @brief 更新功率控制：提交反馈与期望输出，计算功率上限并读取限幅结果，同时更新小陀螺动态缩放。
+   *        Update power control: submit the feedback and the requested outputs, compute
+   *        the power limit, read the limited result and update the dynamic spin scale.
    */
   void PowerControlUpdate()
   {
@@ -723,9 +796,12 @@ class Omni
   }
 
   /**
-   * @brief 全向轮底盘逆动力学解算
-   * @details
-   * 通过运动学正解算出底盘现在的运动状态，并与目标状态进行PID控制，获得目标前馈力矩
+   * @brief 全向轮底盘逆动力学解算。
+   *        Inverse dynamics of the omnidirectional-wheel chassis.
+   *
+   * @details 以运动学正解得到的当前状态与目标状态做 PID，得到各轮的前馈力。
+   *          Runs PIDs between the state from the forward kinematics and the target state
+   *          to obtain the feedforward force of each wheel.
    */
   void DynamicInverseSolution()
   {
@@ -743,8 +819,11 @@ class Omni
   }
 
   /**
-   * @brief 全向轮底盘动力学输出
-   * @details 限幅并输出四个全向轮的电流控制指令
+   * @brief 全向轮底盘动力学输出。
+   *        Dynamics output of the omnidirectional-wheel chassis.
+   *
+   * @details 限幅后向四个全向轮下发力矩指令。
+   *          Limits the torques and sends them to the four wheels.
    */
   void OutputToDynamics()
   {
@@ -776,8 +855,8 @@ class Omni
     }
   }
   /**
-   * @brief 失去控制时的处理
-   *
+   * @brief 失去控制时使全部电机放松。
+   *        Relax all motors when control is lost.
    */
   void LostCtrl()
   {
@@ -808,7 +887,7 @@ class Omni
   /* 电容能量填充条内边距和线宽 */
   static constexpr uint16_t UI_CAP_FILL_MARGIN = 4;
   static constexpr uint16_t UI_CAP_FILL_WIDTH = 8;
-  /* 中间外框位置和尺寸, 当前只绘制外框 */
+  /* 中间外框的位置和尺寸 */
   static constexpr uint16_t UI_STATUS_BOX_X1 = 780;
   static constexpr uint16_t UI_STATUS_BOX_Y1 = 360;
   static constexpr uint16_t UI_STATUS_BOX_X2 = 1200;
@@ -835,7 +914,7 @@ class Omni
   static constexpr uint32_t UI_AI_TEXT_READD_DIV = 37;
   static constexpr uint32_t UI_CAP_FILL_REFRESH_DIV = 3;
   static constexpr uint32_t UI_CAP_FILL_REFRESH_OFFSET = 2;
-  /* 电容条低频重建周期, 客户端丢图后靠 ADD 补回来 */
+  /* 电容条的低频重建周期，周期性发送 ADD 使客户端丢失图形后恢复 */
   static constexpr uint32_t UI_CAP_FILL_READD_DIV = 50;
 
   static void ResetModeUILocked(Omni* omni)
@@ -928,7 +1007,7 @@ class Omni
     {
       Referee::UIFigure2 box_figs{};
       /*
-       * 这里绘制两个外框
+       * 绘制两个外框
        * CBX 是中间自瞄外框
        * CPF 是左侧电容外框
        */

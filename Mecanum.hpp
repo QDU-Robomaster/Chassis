@@ -2,7 +2,7 @@
 
 // clang-format off
 /* === MODULE MANIFEST V2 ===
-module_description: No description provided
+module_description: 麦轮底盘控制实现，由 Chassis 模板使用 / Mecanum chassis controller used by the Chassis template
 depends: []
 === END MANIFEST === */
 // clang-format on
@@ -66,31 +66,71 @@ class Mecanum
     TRACK_START,
   };
   /**
-   * @brief 构造函数，初始化麦轮底盘控制对象
-   * @param cmd 控制命令引用
-   * @param motor_wheel_0 第0个驱动轮电机指针
-   * @param motor_wheel_1 第1个驱动轮电机指针
-   * @param motor_wheel_2 第2个驱动轮电机指针
-   * @param motor_wheel_3 第3个驱动轮电机指针
-   * @param motor_steer_0 第0个舵向电机指针（本底盘用作track）
-   * @param motor_steer_1 第1个舵向电机指针（本底盘未使用）
-   * @param motor_steer_2 第2个舵向电机指针（本底盘未使用）
-   * @param motor_steer_3 第3个舵向电机指针（本底盘未使用）
-   * @param task_stack_depth 控制线程栈深度
-   * @param chassis_param 麦轮底盘参数
-   * @param pid_follow 跟随控制PID参数
-   * @param pid_velocity_x X方向速度PID参数
-   * @param pid_velocity_y Y方向速度PID参数
-   * @param pid_omega 角速度PID参数
-   * @param pid_wheel_omega_0 轮子0角速度PID参数
-   * @param pid_wheel_omega_1 轮子1角速度PID参数
-   * @param pid_wheel_omega_2 轮子2角速度PID参数
-   * @param pid_wheel_omega_3 轮子3角速度PID参数
-   * @param pid_steer_angle_0 舵机0角度PID参数（本底盘用作track_speed_pid）
-   * @param pid_steer_angle_1 舵机1角度PID参数（本底盘未使用）
-   * @param pid_steer_angle_2 舵机2角度PID参数（本底盘未使用）
-   * @param pid_steer_angle_3 舵机3角度PID参数（本底盘未使用）
-   * @param topic_names 订阅的话题名
+   * @brief 构造麦轮底盘控制对象，创建控制线程。
+   *        Construct the mecanum chassis controller and create the control thread.
+   *
+   * @param motor_wheel_0 第 0 个驱动轮电机。
+   *                      Drive wheel motor 0.
+   * @param motor_wheel_1 第 1 个驱动轮电机。
+   *                      Drive wheel motor 1.
+   * @param motor_wheel_2 第 2 个驱动轮电机。
+   *                      Drive wheel motor 2.
+   * @param motor_wheel_3 第 3 个驱动轮电机。
+   *                      Drive wheel motor 3.
+   * @param motor_steer_0 履带电机，可为 nullptr。
+   *                      Track motor, may be nullptr.
+   * @param motor_steer_1 与其他底盘类型共用的构造参数。
+   *                      Constructor parameter shared with the other chassis types.
+   * @param motor_steer_2 与其他底盘类型共用的构造参数。
+   *                      Constructor parameter shared with the other chassis types.
+   * @param motor_steer_3 与其他底盘类型共用的构造参数。
+   *                      Constructor parameter shared with the other chassis types.
+   * @param cmd 控制命令模块实例。
+   *            Control command Module instance.
+   * @param power_control 功率控制模块实例。
+   *                      Power control Module instance.
+   * @param referee 裁判系统模块实例。
+   *                Referee Module instance.
+   * @param task_stack_depth 控制线程栈深。
+   *                         Control thread stack depth.
+   * @param chassis_param 底盘几何与动力参数。
+   *                      Chassis geometry and dynamics parameters.
+   * @param pid_follow 跟随云台的角度 PID 参数。
+   *                   PID parameters of the gimbal-following angle loop.
+   * @param pid_velocity_x x 方向速度 PID 参数。
+   *                       PID parameters of the x velocity loop.
+   * @param pid_velocity_y y 方向速度 PID 参数。
+   *                       PID parameters of the y velocity loop.
+   * @param pid_omega 角速度 PID 参数。
+   *                  PID parameters of the angular-velocity loop.
+   * @param pid_wheel_speed_0 轮 0 速度 PID 参数。
+   *                          PID parameters of the speed loop of wheel 0.
+   * @param pid_wheel_speed_1 轮 1 速度 PID 参数。
+   *                          PID parameters of the speed loop of wheel 1.
+   * @param pid_wheel_speed_2 轮 2 速度 PID 参数。
+   *                          PID parameters of the speed loop of wheel 2.
+   * @param pid_wheel_speed_3 轮 3 速度 PID 参数。
+   *                          PID parameters of the speed loop of wheel 3.
+   * @param pid_steer_angle_0 履带速度 PID 参数。
+   *                          PID parameters of the track speed loop.
+   * @param pid_steer_angle_1 与其他底盘类型共用的构造参数。
+   *                          Constructor parameter shared with the other chassis types.
+   * @param pid_steer_angle_2 与其他底盘类型共用的构造参数。
+   *                          Constructor parameter shared with the other chassis types.
+   * @param pid_steer_angle_3 与其他底盘类型共用的构造参数。
+   *                          Constructor parameter shared with the other chassis types.
+   * @param pid_steer_speed_0 与其他底盘类型共用的构造参数。
+   *                          Constructor parameter shared with the other chassis types.
+   * @param pid_steer_speed_1 与其他底盘类型共用的构造参数。
+   *                          Constructor parameter shared with the other chassis types.
+   * @param pid_steer_speed_2 与其他底盘类型共用的构造参数。
+   *                          Constructor parameter shared with the other chassis types.
+   * @param pid_steer_speed_3 与其他底盘类型共用的构造参数。
+   *                          Constructor parameter shared with the other chassis types.
+   * @param thread_priority 控制线程优先级。
+   *                        Control thread priority.
+   * @param topic_names 订阅的 Topic 名称。
+   *                    Names of the subscribed Topics.
    */
   Mecanum(
 
@@ -207,9 +247,15 @@ class Mecanum
   }
 
   /**
-   * @brief 麦轮底盘控制线程函数
-   * @param mecanum Mecanum对象指针
-   * @details 控制线程主循环，负责接收控制指令、执行运动学解算和动力学控制输出
+   * @brief 麦轮底盘控制线程函数。
+   *        Control thread function of the mecanum chassis.
+   *
+   * @details 线程主循环：接收控制命令，执行运动学解算并输出控制量。
+   *          Main loop: receives the control command, solves the kinematics and sends the
+   *          outputs.
+   *
+   * @param mecanum Mecanum 对象指针。
+   *                Pointer to the Mecanum object.
    */
   static void ThreadFunction(Mecanum* mecanum)
   {
@@ -270,8 +316,12 @@ class Mecanum
   }
 
   /**
-   * @brief 更新电机状态
-   * @details 获取当前时间戳并更新所有驱动轮电机的状态
+   * @brief 更新电机状态。
+   *        Update the motor states.
+   *
+   * @details 记录采样间隔，更新四个驱动轮电机并读取反馈。
+   *          Records the sampling interval, updates the four wheel motors and reads their
+   *          feedback.
    */
   void Update()
   {
@@ -300,7 +350,12 @@ class Mecanum
   }
 
   /**
-   * @brief 设置底盘模式
+   * @brief 设置底盘模式并复位速度、履带与轮速 PID，由 Chassis 外壳调用。
+   *        Set the chassis mode and reset the velocity, track and wheel-speed PIDs;
+   *        called by the Chassis shell.
+   *
+   * @param mode 新模式，取 ChassisMode 的值。
+   *             New mode, a value of ChassisMode.
    */
   void SetMode(uint32_t mode)
   {
@@ -318,8 +373,9 @@ class Mecanum
   }
 
   /**
-   * @brief 更新底盘控制指令状态
-   * @details 从CMD获取底盘控制指令，并转换为目标速度
+   * @brief 从 CMD 命令更新目标角速度与目标平移速度。
+   *        Update the target angular velocity and the target translation velocity from
+   *        the CMD command.
    */
   void UpdateCMD()
   {
@@ -416,8 +472,11 @@ class Mecanum
   }
 
   /**
-   * @brief 麦轮底盘正运动学解算
-   * @details 根据四个麦轮的角速度，解算出底盘当前的运动状态
+   * @brief 麦轮底盘正运动学解算。
+   *        Forward kinematics of the mecanum chassis.
+   *
+   * @details 由四个麦轮的角速度解算底盘的运动状态。
+   *          Solves the chassis motion from the angular velocities of the four wheels.
    */
   void SelfResolution()
   {
@@ -441,8 +500,12 @@ class Mecanum
   }
 
   /**
-   * @brief 麦轮底盘逆运动学解算
-   * @details 根据目标底盘速度（vx, vy, ω），计算四个麦轮的目标角速度
+   * @brief 麦轮底盘逆运动学解算。
+   *        Inverse kinematics of the mecanum chassis.
+   *
+   * @details 由目标底盘速度 (vx, vy, ω) 计算四个麦轮的目标角速度。
+   *          Computes the target angular velocity of the four wheels from the target
+   *          chassis velocity (vx, vy, ω).
    */
   void InverseKinematicsSolution()
   {
@@ -461,7 +524,9 @@ class Mecanum
   }
 
   /**
-   * @brief 计算 PID 输出电流
+   * @brief 计算轮速 PID 输出并与前馈力矩合成。
+   *        Compute the wheel-speed PID outputs and combine them with the feedforward
+   *        torque.
    */
   void CalculateMotorCurrent()
   {
@@ -487,7 +552,9 @@ class Mecanum
   }
 
   /**
-   * @brief 功率控制更新
+   * @brief 更新功率控制：提交反馈与期望输出，计算功率上限并读取限幅结果，同时更新小陀螺动态缩放。
+   *        Update power control: submit the feedback and the requested outputs, compute
+   *        the power limit, read the limited result and update the dynamic spin scale.
    */
   void PowerControlUpdate()
   {
@@ -619,7 +686,7 @@ class Mecanum
           std::clamp(lim_current_abs_sum / req_current_abs_sum, 0.0f, 1.0f);
     }
 
-    /* 将裁判缓冲能量映射为缩放因子离线时保持 1.0 */
+    /* 将裁判缓冲能量映射为缩放因子，裁判系统离线时保持 1.0 */
     float buffer_scale = 1.0f;
     if (referee_online)
     {
@@ -644,7 +711,7 @@ class Mecanum
     rotor_dynamic_scale_ =
         std::clamp(rotor_dynamic_scale_, PARAM.rotor_omega_min_scale, 1.0f);
 
-    /* 仅在小陀螺模式保留缩放其他模式统一复位 */
+    /* 仅在小陀螺模式保留缩放，其他模式复位为 1.0 */
     if (chassis_event_ != ChassisMode::ROTOR)
     {
       rotor_dynamic_scale_ = 1.0f;
@@ -652,9 +719,12 @@ class Mecanum
   }
 
   /**
-   * @brief 麦轮底盘逆动力学解算
-   * @details
-   * 通过运动学正解算出底盘现在的运动状态，并与目标状态进行PID控制，获得目标前馈力矩
+   * @brief 麦轮底盘逆动力学解算。
+   *        Inverse dynamics of the mecanum chassis.
+   *
+   * @details 以运动学正解得到的当前状态与目标状态做 PID，得到各轮的前馈力。
+   *          Runs PIDs between the state from the forward kinematics and the target state
+   *          to obtain the feedforward force of each wheel.
    */
   void DynamicInverseSolution()
   {
@@ -670,8 +740,11 @@ class Mecanum
   }
 
   /**
-   * @brief 麦轮底盘动力学输出
-   * @details 限幅并输出四个麦轮的电流控制指令
+   * @brief 麦轮底盘动力学输出。
+   *        Dynamics output of the mecanum chassis.
+   *
+   * @details 限幅后向四个麦轮下发力矩指令。
+   *          Limits the torques and sends them to the four wheels.
    */
   void OutputToDynamics()
   {
@@ -703,7 +776,7 @@ class Mecanum
   }
   float GetTrackCommandMagnitude() const
   {
-    /* 遥控 y 先缩放再开方让低速段更细 */
+    /* 遥控 y 先缩放再开方，提高低速段的输入分辨率 */
     const float INPUT = cmd_data_.y * TRACK_INPUT_SCALE;
     return std::sqrt(std::abs(INPUT)) * TRACK_MAX_LINEAR_SPEED_MPS;
   }
@@ -733,7 +806,7 @@ class Mecanum
 
     const float DESIRED_TRACK_SPEED = GetTrackSetpointSpeed();
     const float MAX_DELTA = TRACK_SPEED_RAMP_MPS2 * dt_;
-    /* 目标速度加斜坡避免履带突然打满 */
+    /* 目标速度加斜坡，限制履带目标速度的变化率 */
     track_target_speed_ +=
         std::clamp(DESIRED_TRACK_SPEED - track_target_speed_, -MAX_DELTA, MAX_DELTA);
     track_speed_error_ = track_target_speed_ - track_linear_speed_;
@@ -775,8 +848,8 @@ class Mecanum
     track_motor_->Control(track_motor_cmd_);
   }
   /**
-   * @brief 失去控制处理
-   *
+   * @brief 失去控制时使全部电机放松。
+   *        Relax all motors when control is lost.
    */
   void LostCtrl()
   {
@@ -804,21 +877,19 @@ class Mecanum
     {
       case 0:
       {
-        // 根据麦轮底盘的模式映射来显示UI
         const char* mode_str = "RELX";
-        // 麦轮底盘模式: RELAX, INDEPENDENT, ROTOR, FOLLOW
         switch (chassis_event_)
         {
           case ChassisMode::RELAX:
-            mode_str = "RELX";  // 对应麦轮的 RELAX
+            mode_str = "RELX";
             current_mode_ = ChassisMode::RELAX;
             break;
           case ChassisMode::FOLLOW:
-            mode_str = "FOLW";  // 对应麦轮的 FOLLOW
+            mode_str = "FOLW";
             current_mode_ = ChassisMode::FOLLOW;
             break;
           case ChassisMode::ROTOR:
-            mode_str = "ROTO";  // 对应麦轮的 ROTOR
+            mode_str = "ROTO";
             current_mode_ = ChassisMode::ROTOR;
             break;
           case ChassisMode::TRACK_START:
@@ -892,11 +963,11 @@ class Mecanum
   }
 
  private:
-  /* 履带模式使用完整遥控行程，避免目标速度被额外压低 */
+  /* 履带模式使用完整遥控行程 */
   static constexpr float TRACK_INPUT_SCALE = 1.0f;
   /* 麦轮辅助速度按履带目标速度 1:1 跟随 */
   static constexpr float TRACK_WHEEL_ASSIST_SCALE = 1.0f;
-  /* 履带 FOLLOW 纠偏只允许使用普通最大角速度的 35% */
+  /* 履带模式的 FOLLOW 纠偏角速度上限为普通最大角速度的 35% */
   static constexpr float TRACK_FOLLOW_OMEGA_LIMIT_SCALE = 0.35f;
   /* 履带目标线速度最大变化率, 1.2 表示每秒最多变化 1.2 m/s */
   static constexpr float TRACK_SPEED_RAMP_MPS2 = 1.2f;

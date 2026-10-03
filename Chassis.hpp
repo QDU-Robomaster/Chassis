@@ -2,7 +2,7 @@
 
 // clang-format off
 /* === MODULE MANIFEST V2 ===
-module_description: No description provided
+module_description: 底盘控制模块：麦轮、全向轮与舵轮底盘的速度闭环、功率限制与模式切换 / Chassis control Module with velocity loops, power limiting and mode switching for mecanum, omnidirectional and swerve (helm) chassis
 depends:
 - id: xrobot-org/BMI088
   ref: same-or-dev
@@ -28,7 +28,7 @@ depends:
 
 #include "thread.hpp"
 
-/* 功率控制数组按当前最大底盘需求预留 */
+/* 功率控制数组中的电机数量上限 */
 static constexpr int CHASSIS_POWER_CONTROL_MAX_MOTOR_COUNT = 6;
 
 struct MotorData
@@ -40,7 +40,7 @@ struct MotorData
   float rotorspeed_rpm_6020[CHASSIS_POWER_CONTROL_MAX_MOTOR_COUNT] = {};
 };
 
-/* 底盘订阅的话题名；gimbal_euler 只有全向轮底盘使用 */
+/* 底盘订阅的 Topic 名称；gimbal_euler 由全向轮底盘使用 */
 struct ChassisTopicNames
 {
   const char* chassis_cmd = "chassis_cmd";
@@ -155,10 +155,7 @@ class Chassis
 
     chassis_event_.Register(static_cast<uint32_t>(ChassisMode::ROTOR), callback);
     chassis_event_.Register(static_cast<uint32_t>(ChassisMode::FOLLOW), callback);
-    /*
-     * TRACK_START 只属于麦轮
-     * 编译期判断可以让 Omni 和 Helm 继续使用各自的枚举
-     */
+    /* TRACK_START 仅 Mecanum 的 ChassisMode 提供，编译期判断后注册 */
     if constexpr (std::is_same<ChassisType, Mecanum>::value)
     {
       chassis_event_.Register(static_cast<uint32_t>(ChassisMode::TRACK_START), callback);

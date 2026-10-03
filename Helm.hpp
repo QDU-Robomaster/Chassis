@@ -2,7 +2,7 @@
 
 // clang-format off
 /* === MODULE MANIFEST V2 ===
-module_description: No description provided
+module_description: 舵轮底盘控制实现，由 Chassis 模板使用 / Helm (swerve) chassis controller used by the Chassis template
 depends: []
 === END MANIFEST === */
 // clang-format on
@@ -63,31 +63,71 @@ class Helm
   };
 
   /**
-   * @brief 构造函数，初始化舵轮底盘控制对象
-   * @param cmd 控制命令引用
-   * @param motor_wheel_0 第0个驱动轮电机指针
-   * @param motor_wheel_1 第1个驱动轮电机指针
-   * @param motor_wheel_2 第2个驱动轮电机指针
-   * @param motor_wheel_3 第3个驱动轮电机指针
-   * @param motor_steer_0 第0个舵向电机指针
-   * @param motor_steer_1 第1个舵向电机指针
-   * @param motor_steer_2 第2个舵向电机指针
-   * @param motor_steer_3 第3个舵向电机指针
-   * @param task_stack_depth 控制线程栈深度
-   * @param chassis_param 舵轮底盘参数
-   * @param pid_follow 跟随云台角度PID参数
-   * @param pid_velocity_x X方向速度PID参数
-   * @param pid_velocity_y Y方向速度PID参数
-   * @param pid_omega 角速度PID参数
-   * @param pid_wheel_omega_0 轮子0角速度PID参数
-   * @param pid_wheel_omega_1 轮子1角速度PID参数
-   * @param pid_wheel_omega_2 轮子2角速度PID参数
-   * @param pid_wheel_omega_3 轮子3角速度PID参数
-   * @param pid_steer_angle_0 舵机0角度PID参数
-   * @param pid_steer_angle_1 舵机1角度PID参数
-   * @param pid_steer_angle_2 舵机2角度PID参数
-   * @param pid_steer_angle_3 舵机3角度PID参数
-   * @param topic_names 订阅的话题名
+   * @brief 构造舵轮底盘控制对象，创建控制线程。
+   *        Construct the helm chassis controller and create the control thread.
+   *
+   * @param motor_wheel_0 第 0 个驱动轮电机。
+   *                      Drive wheel motor 0.
+   * @param motor_wheel_1 第 1 个驱动轮电机。
+   *                      Drive wheel motor 1.
+   * @param motor_wheel_2 第 2 个驱动轮电机。
+   *                      Drive wheel motor 2.
+   * @param motor_wheel_3 第 3 个驱动轮电机。
+   *                      Drive wheel motor 3.
+   * @param motor_steer_0 第 0 个舵向电机，非空。
+   *                      Steering motor 0, non-null.
+   * @param motor_steer_1 第 1 个舵向电机，非空。
+   *                      Steering motor 1, non-null.
+   * @param motor_steer_2 第 2 个舵向电机，非空。
+   *                      Steering motor 2, non-null.
+   * @param motor_steer_3 第 3 个舵向电机，非空。
+   *                      Steering motor 3, non-null.
+   * @param cmd 控制命令模块实例。
+   *            Control command Module instance.
+   * @param power_control 功率控制模块实例。
+   *                      Power control Module instance.
+   * @param referee 裁判系统模块实例。
+   *                Referee Module instance.
+   * @param task_stack_depth 控制线程栈深。
+   *                         Control thread stack depth.
+   * @param chassis_param 底盘几何与动力参数。
+   *                      Chassis geometry and dynamics parameters.
+   * @param pid_follow 跟随云台的角度 PID 参数。
+   *                   PID parameters of the gimbal-following angle loop.
+   * @param pid_velocity_x x 方向速度 PID 参数。
+   *                       PID parameters of the x velocity loop.
+   * @param pid_velocity_y y 方向速度 PID 参数。
+   *                       PID parameters of the y velocity loop.
+   * @param pid_omega 角速度 PID 参数。
+   *                  PID parameters of the angular-velocity loop.
+   * @param pid_wheel_speed_0 轮 0 速度 PID 参数。
+   *                          PID parameters of the speed loop of wheel 0.
+   * @param pid_wheel_speed_1 轮 1 速度 PID 参数。
+   *                          PID parameters of the speed loop of wheel 1.
+   * @param pid_wheel_speed_2 轮 2 速度 PID 参数。
+   *                          PID parameters of the speed loop of wheel 2.
+   * @param pid_wheel_speed_3 轮 3 速度 PID 参数。
+   *                          PID parameters of the speed loop of wheel 3.
+   * @param pid_steer_angle_0 舵 0 角度 PID 参数。
+   *                          PID parameters of the angle loop of steering motor 0.
+   * @param pid_steer_angle_1 舵 1 角度 PID 参数。
+   *                          PID parameters of the angle loop of steering motor 1.
+   * @param pid_steer_angle_2 舵 2 角度 PID 参数。
+   *                          PID parameters of the angle loop of steering motor 2.
+   * @param pid_steer_angle_3 舵 3 角度 PID 参数。
+   *                          PID parameters of the angle loop of steering motor 3.
+   * @param pid_steer_speed_0 舵 0 速度 PID 参数。
+   *                          PID parameters of the speed loop of steering motor 0.
+   * @param pid_steer_speed_1 舵 1 速度 PID 参数。
+   *                          PID parameters of the speed loop of steering motor 1.
+   * @param pid_steer_speed_2 舵 2 速度 PID 参数。
+   *                          PID parameters of the speed loop of steering motor 2.
+   * @param pid_steer_speed_3 舵 3 速度 PID 参数。
+   *                          PID parameters of the speed loop of steering motor 3.
+   * @param thread_priority 控制线程优先级。
+   *                        Control thread priority.
+   * @param topic_names 订阅的 Topic 名称。
+   *                    Names of the subscribed Topics.
    */
   Helm(Motor* motor_wheel_0, Motor* motor_wheel_1, Motor* motor_wheel_2,
        Motor* motor_wheel_3, Motor* motor_steer_0, Motor* motor_steer_1,
@@ -179,9 +219,15 @@ class Helm
   }
 
   /**
-   * @brief 舵轮底盘控制线程函数
-   * @param helm Helm对象指针
-   * @details 控制线程主循环，负责接收控制指令、执行运动学解算和动力学控制输出
+   * @brief 舵轮底盘控制线程函数。
+   *        Control thread function of the helm chassis.
+   *
+   * @details 线程主循环：接收控制命令，执行运动学解算并输出控制量。
+   *          Main loop: receives the control command, solves the kinematics and sends the
+   *          outputs.
+   *
+   * @param helm Helm 对象指针。
+   *             Pointer to the Helm object.
    */
   static void ThreadFunction(Helm* helm)
   {
@@ -234,8 +280,12 @@ class Helm
     }
   }
   /**
-   * @brief 更新电机状态
-   * @details 获取当前时间戳并更新所有驱动轮电机的状态
+   * @brief 更新电机状态。
+   *        Update the motor states.
+   *
+   * @details 记录采样间隔，更新四个驱动轮电机与四个舵向电机并读取反馈。
+   *          Records the sampling interval, updates the four wheel motors and the four
+   *          steering motors and reads their feedback.
    */
   void Update()
   {
@@ -253,8 +303,8 @@ class Helm
   }
 
   /**
-   * @brief 失去控制处理
-   *
+   * @brief 失去控制时使全部电机放松。
+   *        Relax all motors when control is lost.
    */
   void LostCtrl()
   {
@@ -266,8 +316,12 @@ class Helm
   }
 
   /**
-   * @brief 设置底盘模式 (由 Chassis 外壳调用)
-   * @param mode 要设置的新模式
+   * @brief 设置底盘模式并复位速度、轮速与舵向 PID，由 Chassis 外壳调用。
+   *        Set the chassis mode and reset the velocity, wheel and steering PIDs; called
+   *        by the Chassis shell.
+   *
+   * @param mode 新模式，取 ChassisMode 的值。
+   *             New mode, a value of ChassisMode.
    */
   void SetMode(uint32_t mode)
   {
@@ -286,8 +340,8 @@ class Helm
   }
 
   /**
-   * @brief 更新底盘控制指令状态
-   * @details 从CMD获取底盘控制指令,速控底盘
+   * @brief 从 CMD 命令更新目标速度。
+   *        Update the target velocities from the CMD command.
    */
   void UpdateCMD()
   {
@@ -297,8 +351,9 @@ class Helm
   }
 
   /**
-   * @brief 功率控制更新
-   *
+   * @brief 更新功率控制：提交反馈与期望输出，计算功率上限并读取限幅结果。
+   *        Update power control: submit the feedback and the requested outputs, compute
+   *        the power limit and read the limited result.
    */
   void PowerControlUpdate()
   {
@@ -384,8 +439,9 @@ class Helm
   }
 
   /**
-   * @brief 速控底盘控制
-   * @details 多模式控制底盘
+   * @brief 按模式计算目标速度、舵角，以及轮与舵向电机的输出。
+   *        Compute the target velocity and steering angles for the current mode, and the
+   *        outputs of the wheel and steering motors.
    */
   void Helmcontrol()
   {
@@ -530,8 +586,8 @@ class Helm
   }
 
   /**
-   * @brief 输出控制命令到电机
-   *
+   * @brief 向电机下发控制命令；RELAX 模式下使全部电机放松。
+   *        Send the control commands to the motors; all motors are relaxed in RELAX mode.
    */
   void Output()
   {
@@ -579,11 +635,11 @@ class Helm
   float current_yaw_ = 0.0f;
   float delta_yaw_ = 0.0f;
 
-  /* 转子的转速 */
+  /* 目标轮速与目标舵角 */
   float target_speed_[4] = {0.0f, 0.0f, 0.0f, 0.0f};
   LibXR::CycleValue<float> target_angle_[4] = {0.0f, 0.0f, 0.0f, 0.0f};
 
-  /* 输出的电流值 */
+  /* 轮与舵向电机的输出 */
   float wheel_out_[4] = {0.0f, 0.0f, 0.0f, 0.0f};
   float steer_out_[4] = {0.0f, 0.0f, 0.0f, 0.0f};
   float steer_angle_[4] = {0.0, 0.0, 0.0, 0.0};
