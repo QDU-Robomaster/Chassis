@@ -180,20 +180,20 @@ modules:
       - task_stack_depth: 1536
       - param:
           chassis_param:
-            wheel_radius: 0.065
-            wheel_to_center: 0.26
-            gravity_height: 0.2
-            reduction_ratio: 15.7647
-            wheel_resistance: 0.0
-            error_compensation: 0.0
-            gravity: 230
-            length: 0.3
-            width: 0.3
-            rotor_speed_scale: 1.0
-            rotor_omega_min_scale: 0.55
-            rotor_buffer_low_j: 35.0
-            rotor_buffer_high_j: 70.0
-            rotor_scale_lpf_alpha: 0.3
+            wheel_radius: 0.065f
+            wheel_to_center: 0.26f
+            gravity_height: 0.2f
+            reduction_ratio: 15.7647f
+            wheel_resistance: 0.0f
+            error_compensation: 0.0f
+            gravity: 230.0f
+            length: 0.3f
+            width: 0.3f
+            rotor_speed_scale: 1.0f
+            rotor_omega_min_scale: 0.55f
+            rotor_buffer_low_j: 35.0f
+            rotor_buffer_high_j: 70.0f
+            rotor_scale_lpf_alpha: 0.3f
           pid_follow: '{.p = 10.0, .cycle = true}'
           pid_velocity_x: '{.p = 300.0}'
           pid_velocity_y: '{.p = 300.0}'
