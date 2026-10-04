@@ -155,9 +155,9 @@ The subscribed Topic names match the names used by the publishing instances: `ya
 
 ## 5. 配置示例 / Configuration Example
 
-`xrobot instance add QDU-Robomaster/Chassis` 写入的实例，`template_args` 填为底盘类型（本例为 `Omni`），依赖填写为其他 Module 实例的 id，几何参数与 PID 取自一份全向轮步兵的实机配置：
+`xrobot instance add QDU-Robomaster/Chassis --template-arg Omni` 写入的实例，`template_args` 为底盘类型（本例为 `Omni`），依赖填写为其他模块实例的 id，几何参数与 PID 取自一份全向轮步兵的实机配置：
 
-An instance written by `xrobot instance add QDU-Robomaster/Chassis`, with `template_args` set to the chassis type (`Omni` in this example), the dependencies set to the ids of other Module instances, and the geometry and PID values taken from an omnidirectional-wheel infantry configuration:
+An instance written by `xrobot instance add QDU-Robomaster/Chassis --template-arg Omni`, with `template_args` holding the chassis type (`Omni` in this example), the dependencies set to the ids of other Module instances, and the geometry and PID values taken from an omnidirectional-wheel infantry configuration:
 
 ```yaml
 modules:
@@ -216,9 +216,9 @@ modules:
           gimbal_euler_topic_name: "gimbal_euler"
 ```
 
-`motor_wheel_0..3` 取自 `QDU-Robomaster/RMMotor` 实例，`cmd` 取自 `QDU-Robomaster/CMD` 实例，`power_control` 取自 `QDU-Robomaster/PowerControl` 实例，`referee` 取自 `QDU-Robomaster/Referee` 实例，它们须在本实例之前列出。`Omni` 的 `motor_steer_0..3` 为 `nullptr`；带履带的 `Mecanum` 把 `motor_steer_0` 填为履带电机的实例 id 或 `XR_REGISTER` 注册的对象；`Helm` 把 `motor_steer_0..3` 都填为舵向电机。PID 为 C++ 表达式，使用指定初始化器，省略的字段取默认值。
+`motor_wheel_0..3` 取自 `QDU-Robomaster/RMMotor` 实例，`cmd` 取自 `QDU-Robomaster/CMD` 实例，`power_control` 取自 `QDU-Robomaster/PowerControl` 实例，`referee` 取自 `QDU-Robomaster/Referee` 实例，它们须在本实例之前列出。`Omni` 的 `motor_steer_0..3` 为 `nullptr`；带履带的 `Mecanum` 把 `motor_steer_0` 填为履带电机的实例或 `XR_REGISTER` 注册的对象；`Helm` 把 `motor_steer_0..3` 都填为舵向电机。`motor_steer_0..3` 是指针依赖，写成 `'&id'`。PID 为 C++ 表达式，使用指定初始化器，省略的字段取默认值。
 
-`motor_wheel_0..3` are taken from `QDU-Robomaster/RMMotor` instances, `cmd` from a `QDU-Robomaster/CMD` instance, `power_control` from a `QDU-Robomaster/PowerControl` instance and `referee` from a `QDU-Robomaster/Referee` instance; they are listed before this instance. For `Omni`, `motor_steer_0..3` are `nullptr`; a `Mecanum` with a track sets `motor_steer_0` to the instance id or the `XR_REGISTER` object of the track motor; `Helm` sets all of `motor_steer_0..3` to the steering motors. The PIDs are C++ expressions written as designated initializers, and omitted fields take their defaults.
+`motor_wheel_0..3` are taken from `QDU-Robomaster/RMMotor` instances, `cmd` from a `QDU-Robomaster/CMD` instance, `power_control` from a `QDU-Robomaster/PowerControl` instance and `referee` from a `QDU-Robomaster/Referee` instance; they are listed before this instance. For `Omni`, `motor_steer_0..3` are `nullptr`; a `Mecanum` with a track sets `motor_steer_0` to the instance or the `XR_REGISTER` object of the track motor; `Helm` sets all of `motor_steer_0..3` to the steering motors. `motor_steer_0..3` are pointer dependencies written as `'&id'`. The PIDs are C++ expressions written as designated initializers, and omitted fields take their defaults.
 
 ## 6. 依赖与硬件 / Dependencies and Hardware
 
