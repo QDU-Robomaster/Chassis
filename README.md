@@ -84,6 +84,8 @@ Chassis(Motor& motor_wheel_0, Motor& motor_wheel_1, Motor& motor_wheel_2,
   - `wheel_radius`：轮半径，单位 m；
   - `wheel_to_center`：轮心到底盘中心的距离，单位 m；
   - `reduction_ratio`：轮电机减速比；
+  - `wheel_resistance`：轮阻；
+  - `error_compensation`：误差补偿；
   - `gravity_height`：质心高度，单位 m，用于 `Omni` 姿态前馈；
   - `gravity`：底盘重力，单位 N，用于 `Omni` 姿态前馈；
   - `length`、`width`：底盘轮距的长与宽，单位 m，用于 `Omni` 姿态前馈；
@@ -116,6 +118,8 @@ Configuration parameters:
   - `wheel_radius`: wheel radius in m;
   - `wheel_to_center`: distance from the wheel center to the chassis center in m;
   - `reduction_ratio`: reduction ratio of the wheel motors;
+  - `wheel_resistance`: wheel resistance;
+  - `error_compensation`: error compensation;
   - `gravity_height`: center-of-mass height in m, used by the `Omni` attitude feedforward;
   - `gravity`: chassis weight in N, used by the `Omni` attitude feedforward;
   - `length`, `width`: length and width of the wheel layout in m, used by the `Omni` attitude feedforward;
